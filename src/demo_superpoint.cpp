@@ -71,4 +71,3 @@ int main(int argc, char* argv[]) {
   LOG(INFO) << "BYEBYE";
   return 0;
 }
-

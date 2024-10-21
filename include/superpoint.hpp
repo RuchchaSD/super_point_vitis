@@ -35,8 +35,8 @@ namespace ai {
 struct SuperPointResult {
   std::vector<std::vector<float>> descriptor;
   std::vector<std::pair<float, float>> keypoints;
-  float scale_w;
-  float scale_h;
+  float scale_w; // helps convert the model’s output coordinates back to the original size of the input image
+  float scale_h; // helps convert the model’s output coordinates back to the original size of the input image
 };
 
 class SuperPoint {
@@ -59,5 +59,4 @@ class SuperPoint {
 
 }  // namespace ai
 }  // namespace vitis
-
 

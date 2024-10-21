@@ -80,15 +80,15 @@ class SuperPointImp : public SuperPoint {
   bool verifyOutput(size_t count);
 
  public:
-  std::unique_ptr<vitis::ai::DpuTask> task_;
-  vector<vitis::ai::library::InputTensor> inputs_;
-  vector<vitis::ai::library::OutputTensor> outputs_;
+  std::unique_ptr<vitis::ai::DpuTask> task_; // holds the DPU task
+  vector<vitis::ai::library::InputTensor> inputs_; // holds the input tensor from the DPU
+  vector<vitis::ai::library::OutputTensor> outputs_; // holds the output tensor from the DPU
 
  private:
-  int sWidth;
-  int sHeight;
-  size_t batch_;
-  vector<size_t> chans_;
+  int sWidth; // width of the input tensor
+  int sHeight; // height of the input tensor
+  size_t batch_; // batch size of the input tensor
+  vector<size_t> chans_; // channels of the output tensor
 
   size_t channel1;
   size_t channel2;
@@ -96,7 +96,7 @@ class SuperPointImp : public SuperPoint {
   size_t outputW;
   size_t output2H;
   size_t output2W;
-  float conf_thresh;
+  float conf_thresh; // confidence threshold for the keypoints
   size_t outputSize1;
   size_t outputSize2;
   std::vector<SuperPointResult> results_;
@@ -112,12 +112,14 @@ std::unique_ptr<SuperPoint> SuperPoint::create(const std::string& model_name) {
 }
 
 SuperPointImp::SuperPointImp(const std::string& model_name): SuperPoint(model_name) {
+
+  // create one DPU task for the model
   task_ = vitis::ai::DpuTask::create(model_name);
-  inputs_ = task_->getInputTensor(0u);
-  sWidth = inputs_[0].width;
-  sHeight = inputs_[0].height;
-  batch_ = inputs_[0].batch;
-  chans_ = {65,256};
+  inputs_ = task_->getInputTensor(0u); // get the input tensor from the DPU task
+  sWidth = inputs_[0].width; // get the width of the input tensor
+  sHeight = inputs_[0].height; // get the height of the input tensor
+  batch_ = inputs_[0].batch; // get the batch size of the input tensor
+  chans_ = {65,256}; // channels of the output tensor
   outputs_ = sort_tensors(task_ -> getOutputTensor(0u), chans_);
   channel1 = outputs_[0].channel;
   channel2 = outputs_[1].channel;
@@ -309,9 +311,10 @@ vector<vector<float>> grid_sample(const float* desc_map, const vector<pair<float
 
 bool SuperPointImp::verifyOutput(size_t count) {
   for (size_t n = 0; n < count; ++n) {
-    SuperPointResult result_;
-    int8_t* out1 = (int8_t*)outputs_[0].get_data(n);
-    int8_t* out2 = (int8_t*)outputs_[1].get_data(n);
+    SuperPointResult result_; // holds the final result of the superpoint model
+
+    int8_t* out1 = (int8_t*)outputs_[0].get_data(n); // heatmap tensordata -> keypoints
+    int8_t* out2 = (int8_t*)outputs_[1].get_data(n); // descriptor tensordata -> descriptors
 
     float scale1 = tensor_scale(outputs_[0]);
     float scale2 = tensor_scale(outputs_[1]);
@@ -321,9 +324,10 @@ bool SuperPointImp::verifyOutput(size_t count) {
       ofs.write((char*)out2, outputSize1);
       ofs.close();
     }
-
     LOG_IF(INFO, ENV_PARAM(DEBUG_SUPERPOINT)) 
       << "the scales: " << scale1 << " " << scale2 << endl;
+
+  // Keypoint extraction
     vector<float> output1(outputSize1);
     __TIC__(SOFTMAX)
 #ifndef HW_SOFTMAX
@@ -374,11 +378,15 @@ bool SuperPointImp::verifyOutput(size_t count) {
     }
     __TOC__(SORT)
 
+    // Non-maximum suppression
     __TIC__(NMS)
     nms_fast(xs, ys, ptscore, keep_inds, sWidth, sHeight);
     __TOC__(NMS)
+    
 
+  // Descriptor extraction
     __TIC__(L2_NORMAL)
+    // L2 normalization for descriptor tensor
     vector<float> output2(outputSize2);
     LOG_IF(INFO, ENV_PARAM(DEBUG_SUPERPOINT)) 
       << "L2 normal: channel " << channel2 << " h: " << outputH << " w: " << outputW;
@@ -386,12 +394,14 @@ bool SuperPointImp::verifyOutput(size_t count) {
     __TOC__(L2_NORMAL)
 
     __TIC__(DESC)
-    for (size_t i = 0; i < keep_inds.size(); ++i) {
-        pair<float, float> pt(float(xs[keep_inds[i]]), float(ys[keep_inds[i]]));
+    for (size_t ind = 0; ind < keep_inds.size(); ++ind) {
+        // take the keypoints to the result object
+        pair<float, float> pt(float(xs[keep_inds[ind]]), float(ys[keep_inds[ind]]));
         result_.keypoints.push_back(pt);
     }
     LOG_IF(INFO, ENV_PARAM(DEBUG_SUPERPOINT)) 
       << "keypoints size: " << result_.keypoints.size();
+    // take the descriptors to the result object
     result_.descriptor = grid_sample(output2.data(), result_.keypoints, channel2, output2H, output2W);
     __TOC__(DESC)
 
@@ -456,16 +466,18 @@ void SuperPointImp::set_input(vitis::ai::library::InputTensor& tensor, float mea
 
 // run the fadnet
 void SuperPointImp::superpoint_run(const std::vector<cv::Mat>& input_image) {
-  auto input_tensor = inputs_[0];
-  auto group = input_image.size() / batch_;
-  auto rest = input_image.size() % batch_;
-  auto img_iter = input_image.begin();
-  auto img_end = img_iter;
-  if (rest>0) group += 1;
+  auto input_tensor = inputs_[0]; //input tensor for the DPU task
+  auto group = input_image.size() / batch_; // number of complete batches of images
+  auto rest = input_image.size() % batch_; // number of images in the last incomplete batch
+  auto img_iter = input_image.begin(); // iterator to the first image in the input vector
+  auto img_end = img_iter; // iterator to the last image in the input vector
+
+  if (rest>0) group += 1; // if there is an incomplete batch, increment the number of batches
   size_t count = batch_;
-  for(size_t g = 0; g < group; ++g) {
+
+  for(size_t g = 0; g < group; ++g) { // iterate over the groups of image batches
     __TIC__(PREPROCESS)
-    size_t dist = std::distance(img_iter, input_image.end());
+    size_t dist = std::distance(img_iter, input_image.end()); // number of images left to process
     if (dist > batch_)
       img_end += batch_;
     else {
@@ -473,19 +485,25 @@ void SuperPointImp::superpoint_run(const std::vector<cv::Mat>& input_image) {
       img_end = input_image.end();
       //cout << "count: " << count << endl;
     }
-    vector<Mat> imgs(img_iter, img_end);
+    vector<Mat> imgs(img_iter, img_end); // current batch of images from the input images
     img_iter = img_end;
     // set mean=0, scale=1/255.0
-    set_input(input_tensor, 0, 0.00392157, imgs);
+    ////////////////////////////////////////////////////
+    set_input(input_tensor, 0, 0.00392157, imgs); // preprocess function to set the input tensor
+    ////////////////////////////////////////////////////
     __TOC__(PREPROCESS)
     //if(ifstream("./input.bin").read((char*)input_tensor.get_data(0), input_tensor.size/input_tensor.batch).good())
     //  cout << "succeed to read file";
     __TIC__(DPU_RUN)
-    task_->run(0u);
+    //////////////////////////////////
+    task_->run(0u); // run the DPU task
+    //////////////////////////////////
     __TOC__(DPU_RUN)
 
     __TIC__(POSTPROCESS)
+    //////////////////////////////////
     verifyOutput(count);
+    /////////////////////////////////
     __TOC__(POSTPROCESS)
     for (size_t j = 0; j < batch_; ++j) {
       results_[g*batch_+j].scale_w = imgs[j].cols/(float)sWidth;
@@ -495,6 +513,7 @@ void SuperPointImp::superpoint_run(const std::vector<cv::Mat>& input_image) {
 }
 
 std::vector<SuperPointResult> SuperPointImp::run(const std::vector<cv::Mat>& imgs) {
+  // entry point
   superpoint_run(imgs);
   return results_;
 }
