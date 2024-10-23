@@ -1,22 +1,22 @@
 [
 {
   "directory": "/home/ubuntu/OurTest/super_point/build",
-  "command": "/usr/bin/aarch64-linux-gnu-g++ -DENABLE_NEON -DGFLAGS_IS_A_DLL=0 -DUNILOG_USE_DLL=1 -DUNI_LOG_NDEBUG -DVART_RUNNER_USE_DLL=1 -DVART_UTIL_USE_DLL=1 -DXIR_USE_DLL=1 -I/home/ubuntu/OurTest/super_point/include -isystem /usr/include/opencv4 -isystem /root/glog_build/include  -pg -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/demo.dir/src/superpoint.cpp.o -c /home/ubuntu/OurTest/super_point/src/superpoint.cpp",
+  "command": "/usr/bin/aarch64-linux-gnu-g++ -DENABLE_NEON -DGFLAGS_IS_A_DLL=0 -DUNILOG_USE_DLL=1 -DUNI_LOG_NDEBUG -DVART_RUNNER_USE_DLL=1 -DVART_UTIL_USE_DLL=1 -DXIR_USE_DLL=1 -I/home/ubuntu/OurTest/super_point/include -isystem /usr/include/opencv4 -isystem /root/glog_build/include -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/demo.dir/src/superpoint.cpp.o -c /home/ubuntu/OurTest/super_point/src/superpoint.cpp",
   "file": "/home/ubuntu/OurTest/super_point/src/superpoint.cpp"
 },
 {
   "directory": "/home/ubuntu/OurTest/super_point/build",
-  "command": "/usr/bin/aarch64-linux-gnu-g++ -DENABLE_NEON -DGFLAGS_IS_A_DLL=0 -DUNILOG_USE_DLL=1 -DUNI_LOG_NDEBUG -DVART_RUNNER_USE_DLL=1 -DVART_UTIL_USE_DLL=1 -DXIR_USE_DLL=1 -I/home/ubuntu/OurTest/super_point/include -isystem /usr/include/opencv4 -isystem /root/glog_build/include  -pg -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/demo.dir/src/demo_superpoint.cpp.o -c /home/ubuntu/OurTest/super_point/src/demo_superpoint.cpp",
+  "command": "/usr/bin/aarch64-linux-gnu-g++ -DENABLE_NEON -DGFLAGS_IS_A_DLL=0 -DUNILOG_USE_DLL=1 -DUNI_LOG_NDEBUG -DVART_RUNNER_USE_DLL=1 -DVART_UTIL_USE_DLL=1 -DXIR_USE_DLL=1 -I/home/ubuntu/OurTest/super_point/include -isystem /usr/include/opencv4 -isystem /root/glog_build/include -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/demo.dir/src/demo_superpoint.cpp.o -c /home/ubuntu/OurTest/super_point/src/demo_superpoint.cpp",
   "file": "/home/ubuntu/OurTest/super_point/src/demo_superpoint.cpp"
 },
 {
   "directory": "/home/ubuntu/OurTest/super_point/build",
-  "command": "/usr/bin/aarch64-linux-gnu-g++ -DENABLE_NEON -DGFLAGS_IS_A_DLL=0 -DUNILOG_USE_DLL=1 -DUNI_LOG_NDEBUG -DVART_RUNNER_USE_DLL=1 -DVART_UTIL_USE_DLL=1 -DXIR_USE_DLL=1 -I/home/ubuntu/OurTest/super_point/include -isystem /usr/include/opencv4 -isystem /root/glog_build/include  -pg -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/test_performance.dir/src/superpoint.cpp.o -c /home/ubuntu/OurTest/super_point/src/superpoint.cpp",
+  "command": "/usr/bin/aarch64-linux-gnu-g++ -DENABLE_NEON -DGFLAGS_IS_A_DLL=0 -DUNILOG_USE_DLL=1 -DUNI_LOG_NDEBUG -DVART_RUNNER_USE_DLL=1 -DVART_UTIL_USE_DLL=1 -DXIR_USE_DLL=1 -I/home/ubuntu/OurTest/super_point/include -isystem /usr/include/opencv4 -isystem /root/glog_build/include -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/test_performance.dir/src/superpoint.cpp.o -c /home/ubuntu/OurTest/super_point/src/superpoint.cpp",
   "file": "/home/ubuntu/OurTest/super_point/src/superpoint.cpp"
 },
 {
   "directory": "/home/ubuntu/OurTest/super_point/build",
-  "command": "/usr/bin/aarch64-linux-gnu-g++ -DENABLE_NEON -DGFLAGS_IS_A_DLL=0 -DUNILOG_USE_DLL=1 -DUNI_LOG_NDEBUG -DVART_RUNNER_USE_DLL=1 -DVART_UTIL_USE_DLL=1 -DXIR_USE_DLL=1 -I/home/ubuntu/OurTest/super_point/include -isystem /usr/include/opencv4 -isystem /root/glog_build/include  -pg -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/test_performance.dir/src/test_performance_superpoint.cpp.o -c /home/ubuntu/OurTest/super_point/src/test_performance_superpoint.cpp",
+  "command": "/usr/bin/aarch64-linux-gnu-g++ -DENABLE_NEON -DGFLAGS_IS_A_DLL=0 -DUNILOG_USE_DLL=1 -DUNI_LOG_NDEBUG -DVART_RUNNER_USE_DLL=1 -DVART_UTIL_USE_DLL=1 -DXIR_USE_DLL=1 -I/home/ubuntu/OurTest/super_point/include -isystem /usr/include/opencv4 -isystem /root/glog_build/include -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/test_performance.dir/src/test_performance_superpoint.cpp.o -c /home/ubuntu/OurTest/super_point/src/test_performance_superpoint.cpp",
   "file": "/home/ubuntu/OurTest/super_point/src/test_performance_superpoint.cpp"
 }
 ]

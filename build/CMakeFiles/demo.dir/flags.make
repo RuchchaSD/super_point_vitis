@@ -6,5 +6,5 @@ CXX_DEFINES = -DENABLE_NEON -DGFLAGS_IS_A_DLL=0 -DUNILOG_USE_DLL=1 -DUNI_LOG_NDE
 
 CXX_INCLUDES = -I/home/ubuntu/OurTest/super_point/include -isystem /usr/include/opencv4 -isystem /root/glog_build/include
 
-CXX_FLAGS =  -pg -O3 -DNDEBUG -std=gnu++17
+CXX_FLAGS = -O3 -DNDEBUG -std=gnu++17
 

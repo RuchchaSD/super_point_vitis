@@ -2,7 +2,7 @@
 	"artifacts" : 
 	[
 		{
-			"path" : "test_performance"
+			"path" : "demo"
 		}
 	],
 	"backtrace" : 1,
@@ -26,13 +26,13 @@
 			{
 				"command" : 0,
 				"file" : 0,
-				"line" : 46,
+				"line" : 41,
 				"parent" : 0
 			},
 			{
 				"command" : 1,
 				"file" : 0,
-				"line" : 65,
+				"line" : 52,
 				"parent" : 0
 			},
 			{
@@ -55,7 +55,7 @@
 			"compileCommandFragments" : 
 			[
 				{
-					"fragment" : " -pg -O3 -DNDEBUG"
+					"fragment" : "-O3 -DNDEBUG"
 				},
 				{
 					"fragment" : "-std=gnu++17"
@@ -126,17 +126,17 @@
 			]
 		}
 	],
-	"id" : "test_performance::@6890427a1f51a3e7e1df",
+	"id" : "demo::@6890427a1f51a3e7e1df",
 	"link" : 
 	{
 		"commandFragments" : 
 		[
 			{
-				"fragment" : "-pg -O3 -DNDEBUG",
+				"fragment" : "-O3 -DNDEBUG",
 				"role" : "flags"
 			},
 			{
-				"fragment" : "-pg",
+				"fragment" : "",
 				"role" : "flags"
 			},
 			{
@@ -471,8 +471,8 @@
 		],
 		"language" : "CXX"
 	},
-	"name" : "test_performance",
-	"nameOnDisk" : "test_performance",
+	"name" : "demo",
+	"nameOnDisk" : "demo",
 	"paths" : 
 	{
 		"build" : ".",
@@ -500,7 +500,7 @@
 		{
 			"backtrace" : 1,
 			"compileGroupIndex" : 0,
-			"path" : "src/test_performance_superpoint.cpp",
+			"path" : "src/demo_superpoint.cpp",
 			"sourceGroupIndex" : 0
 		}
 	],

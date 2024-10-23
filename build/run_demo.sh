@@ -1,0 +1,1 @@
+./demo /home/ubuntu/OurTest/super_point/superpoint_tf.xmodel /home/ubuntu/OurTest/super_point/test.jpg

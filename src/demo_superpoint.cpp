@@ -30,7 +30,7 @@ int main(int argc, char* argv[]) {
     argv = default_argv;
     // argc = 3;
   }
-  int nIter = 100;
+  int nIter = 1;
   string model_name = argv[1];
   Mat img = imread(argv[2], cv::IMREAD_GRAYSCALE);
   {
