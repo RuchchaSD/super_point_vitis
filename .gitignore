@@ -1,0 +1,6 @@
+temp
+build*
+# build/
+working/
+.vscode
+.git/
