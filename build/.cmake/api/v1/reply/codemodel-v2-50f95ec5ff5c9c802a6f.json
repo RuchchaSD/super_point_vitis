@@ -6,7 +6,7 @@
 			[
 				{
 					"build" : ".",
-					"jsonFile" : "directory-.-Release-f5ebdc15457944623624.json",
+					"jsonFile" : "directory-.-f5ebdc15457944623624.json",
 					"minimumCMakeVersion" : 
 					{
 						"string" : "3.10"
@@ -15,12 +15,11 @@
 					"source" : ".",
 					"targetIndexes" : 
 					[
-						0,
-						1
+						0
 					]
 				}
 			],
-			"name" : "Release",
+			"name" : "",
 			"projects" : 
 			[
 				{
@@ -31,8 +30,7 @@
 					"name" : "SuperPointProject",
 					"targetIndexes" : 
 					[
-						0,
-						1
+						0
 					]
 				}
 			],
@@ -41,15 +39,8 @@
 				{
 					"directoryIndex" : 0,
 					"id" : "demo::@6890427a1f51a3e7e1df",
-					"jsonFile" : "target-demo-Release-4f2ad05e26600bb9c600.json",
+					"jsonFile" : "target-demo-303b9a3d7c4d82dd57cf.json",
 					"name" : "demo",
-					"projectIndex" : 0
-				},
-				{
-					"directoryIndex" : 0,
-					"id" : "test_performance::@6890427a1f51a3e7e1df",
-					"jsonFile" : "target-test_performance-Release-85a560580a476d2b5fdc.json",
-					"name" : "test_performance",
 					"projectIndex" : 0
 				}
 			]

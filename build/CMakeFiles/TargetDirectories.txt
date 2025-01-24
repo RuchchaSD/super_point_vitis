@@ -1,4 +1,3 @@
 /home/ubuntu/OurTest/super_point/build/CMakeFiles/demo.dir
-/home/ubuntu/OurTest/super_point/build/CMakeFiles/test_performance.dir
 /home/ubuntu/OurTest/super_point/build/CMakeFiles/edit_cache.dir
 /home/ubuntu/OurTest/super_point/build/CMakeFiles/rebuild_cache.dir

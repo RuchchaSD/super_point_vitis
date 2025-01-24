@@ -33,7 +33,7 @@
 						"gcc_s"
 					]
 				},
-				"path" : "/usr/bin/aarch64-linux-gnu-gcc",
+				"path" : "/usr/bin/cc",
 				"version" : "11.4.0"
 			},
 			"language" : "C",
@@ -79,7 +79,7 @@
 						"gcc"
 					]
 				},
-				"path" : "/usr/bin/aarch64-linux-gnu-g++",
+				"path" : "/usr/bin/c++",
 				"version" : "11.4.0"
 			},
 			"language" : "CXX",

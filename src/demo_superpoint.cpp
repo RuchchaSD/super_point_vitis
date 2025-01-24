@@ -34,7 +34,7 @@ int main(int argc, char* argv[]) {
   string model_name = argv[1];
   Mat img = imread(argv[2], cv::IMREAD_GRAYSCALE);
   {
-    auto superpoint = vitis::ai::SuperPoint::create(model_name);
+    auto superpoint = vitis::ai::SuperPoint::create(model_name, 5);
     if (!superpoint) { // supress coverity complain
        std::cerr <<"create error\n";
        abort();

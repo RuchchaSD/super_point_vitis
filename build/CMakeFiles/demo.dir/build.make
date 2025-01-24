@@ -73,29 +73,29 @@ CMakeFiles/demo.dir/src/superpoint.cpp.o: CMakeFiles/demo.dir/flags.make
 CMakeFiles/demo.dir/src/superpoint.cpp.o: ../src/superpoint.cpp
 CMakeFiles/demo.dir/src/superpoint.cpp.o: CMakeFiles/demo.dir/compiler_depend.ts
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/ubuntu/OurTest/super_point/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/demo.dir/src/superpoint.cpp.o"
-	/usr/bin/aarch64-linux-gnu-g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/demo.dir/src/superpoint.cpp.o -MF CMakeFiles/demo.dir/src/superpoint.cpp.o.d -o CMakeFiles/demo.dir/src/superpoint.cpp.o -c /home/ubuntu/OurTest/super_point/src/superpoint.cpp
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/demo.dir/src/superpoint.cpp.o -MF CMakeFiles/demo.dir/src/superpoint.cpp.o.d -o CMakeFiles/demo.dir/src/superpoint.cpp.o -c /home/ubuntu/OurTest/super_point/src/superpoint.cpp
 
 CMakeFiles/demo.dir/src/superpoint.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/demo.dir/src/superpoint.cpp.i"
-	/usr/bin/aarch64-linux-gnu-g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/ubuntu/OurTest/super_point/src/superpoint.cpp > CMakeFiles/demo.dir/src/superpoint.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/ubuntu/OurTest/super_point/src/superpoint.cpp > CMakeFiles/demo.dir/src/superpoint.cpp.i
 
 CMakeFiles/demo.dir/src/superpoint.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/demo.dir/src/superpoint.cpp.s"
-	/usr/bin/aarch64-linux-gnu-g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/ubuntu/OurTest/super_point/src/superpoint.cpp -o CMakeFiles/demo.dir/src/superpoint.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/ubuntu/OurTest/super_point/src/superpoint.cpp -o CMakeFiles/demo.dir/src/superpoint.cpp.s
 
 CMakeFiles/demo.dir/src/demo_superpoint.cpp.o: CMakeFiles/demo.dir/flags.make
 CMakeFiles/demo.dir/src/demo_superpoint.cpp.o: ../src/demo_superpoint.cpp
 CMakeFiles/demo.dir/src/demo_superpoint.cpp.o: CMakeFiles/demo.dir/compiler_depend.ts
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/ubuntu/OurTest/super_point/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/demo.dir/src/demo_superpoint.cpp.o"
-	/usr/bin/aarch64-linux-gnu-g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/demo.dir/src/demo_superpoint.cpp.o -MF CMakeFiles/demo.dir/src/demo_superpoint.cpp.o.d -o CMakeFiles/demo.dir/src/demo_superpoint.cpp.o -c /home/ubuntu/OurTest/super_point/src/demo_superpoint.cpp
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/demo.dir/src/demo_superpoint.cpp.o -MF CMakeFiles/demo.dir/src/demo_superpoint.cpp.o.d -o CMakeFiles/demo.dir/src/demo_superpoint.cpp.o -c /home/ubuntu/OurTest/super_point/src/demo_superpoint.cpp
 
 CMakeFiles/demo.dir/src/demo_superpoint.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/demo.dir/src/demo_superpoint.cpp.i"
-	/usr/bin/aarch64-linux-gnu-g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/ubuntu/OurTest/super_point/src/demo_superpoint.cpp > CMakeFiles/demo.dir/src/demo_superpoint.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/ubuntu/OurTest/super_point/src/demo_superpoint.cpp > CMakeFiles/demo.dir/src/demo_superpoint.cpp.i
 
 CMakeFiles/demo.dir/src/demo_superpoint.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/demo.dir/src/demo_superpoint.cpp.s"
-	/usr/bin/aarch64-linux-gnu-g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/ubuntu/OurTest/super_point/src/demo_superpoint.cpp -o CMakeFiles/demo.dir/src/demo_superpoint.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/ubuntu/OurTest/super_point/src/demo_superpoint.cpp -o CMakeFiles/demo.dir/src/demo_superpoint.cpp.s
 
 # Object files for target demo
 demo_OBJECTS = \

@@ -129,19 +129,6 @@ demo/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/demo.dir/build.make CMakeFiles/demo.dir/build
 .PHONY : demo/fast
 
-#=============================================================================
-# Target rules for targets named test_performance
-
-# Build rule for target.
-test_performance: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_performance
-.PHONY : test_performance
-
-# fast build rule for target.
-test_performance/fast:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_performance.dir/build.make CMakeFiles/test_performance.dir/build
-.PHONY : test_performance/fast
-
 src/demo_superpoint.o: src/demo_superpoint.cpp.o
 .PHONY : src/demo_superpoint.o
 
@@ -172,7 +159,6 @@ src/superpoint.o: src/superpoint.cpp.o
 # target to build an object file
 src/superpoint.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/demo.dir/build.make CMakeFiles/demo.dir/src/superpoint.cpp.o
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_performance.dir/build.make CMakeFiles/test_performance.dir/src/superpoint.cpp.o
 .PHONY : src/superpoint.cpp.o
 
 src/superpoint.i: src/superpoint.cpp.i
@@ -181,7 +167,6 @@ src/superpoint.i: src/superpoint.cpp.i
 # target to preprocess a source file
 src/superpoint.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/demo.dir/build.make CMakeFiles/demo.dir/src/superpoint.cpp.i
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_performance.dir/build.make CMakeFiles/test_performance.dir/src/superpoint.cpp.i
 .PHONY : src/superpoint.cpp.i
 
 src/superpoint.s: src/superpoint.cpp.s
@@ -190,32 +175,7 @@ src/superpoint.s: src/superpoint.cpp.s
 # target to generate assembly for a file
 src/superpoint.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/demo.dir/build.make CMakeFiles/demo.dir/src/superpoint.cpp.s
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_performance.dir/build.make CMakeFiles/test_performance.dir/src/superpoint.cpp.s
 .PHONY : src/superpoint.cpp.s
-
-src/test_performance_superpoint.o: src/test_performance_superpoint.cpp.o
-.PHONY : src/test_performance_superpoint.o
-
-# target to build an object file
-src/test_performance_superpoint.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_performance.dir/build.make CMakeFiles/test_performance.dir/src/test_performance_superpoint.cpp.o
-.PHONY : src/test_performance_superpoint.cpp.o
-
-src/test_performance_superpoint.i: src/test_performance_superpoint.cpp.i
-.PHONY : src/test_performance_superpoint.i
-
-# target to preprocess a source file
-src/test_performance_superpoint.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_performance.dir/build.make CMakeFiles/test_performance.dir/src/test_performance_superpoint.cpp.i
-.PHONY : src/test_performance_superpoint.cpp.i
-
-src/test_performance_superpoint.s: src/test_performance_superpoint.cpp.s
-.PHONY : src/test_performance_superpoint.s
-
-# target to generate assembly for a file
-src/test_performance_superpoint.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_performance.dir/build.make CMakeFiles/test_performance.dir/src/test_performance_superpoint.cpp.s
-.PHONY : src/test_performance_superpoint.cpp.s
 
 # Help Target
 help:
@@ -226,16 +186,12 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... demo"
-	@echo "... test_performance"
 	@echo "... src/demo_superpoint.o"
 	@echo "... src/demo_superpoint.i"
 	@echo "... src/demo_superpoint.s"
 	@echo "... src/superpoint.o"
 	@echo "... src/superpoint.i"
 	@echo "... src/superpoint.s"
-	@echo "... src/test_performance_superpoint.o"
-	@echo "... src/test_performance_superpoint.i"
-	@echo "... src/test_performance_superpoint.s"
 .PHONY : help
 
 
