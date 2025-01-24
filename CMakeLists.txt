@@ -43,10 +43,10 @@ add_executable(demo
     src/demo_superpoint.cpp
 )
 
-add_executable(test_performance
-    ${MODEL}
-    src/test_performance_superpoint.cpp
-)
+# add_executable(test_performance
+#     ${MODEL}
+#     src/test_performance_superpoint.cpp
+# )
 
 # Link libraries for the demo executable
 target_link_libraries(demo
@@ -62,14 +62,14 @@ target_link_libraries(demo
 )
 
 # Link libraries for the test_performance executable
-target_link_libraries(test_performance
-    ${OpenCV_LIBS}
-    vart::runner
-    vart::util
-    xir::xir
-    unilog::unilog
-    glog::glog
-    Threads::Threads
-    vitis_ai_library::dpu_task
-    vitis_ai_library::math
-)
+# target_link_libraries(test_performance
+#     ${OpenCV_LIBS}
+#     vart::runner
+#     vart::util
+#     xir::xir
+#     unilog::unilog
+#     glog::glog
+#     Threads::Threads
+#     vitis_ai_library::dpu_task
+#     vitis_ai_library::math
+# )
