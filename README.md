@@ -69,8 +69,8 @@ On the Kria KR260, many standard convolutional layers can be accelerated via the
 
 2. **Clone the Repository**
    ```bash
-   git clone https://github.com/YourUsername/Multithreaded-SuperPoint-Kria.git
-   cd Multithreaded-SuperPoint-Kria
+   git [clone https://github.com/YourUsername/Multithreaded-SuperPoint-Kria.git](https://github.com/RuchchaSD/super_point_vitis.git)
+   cd super_point_vitis
    ```
 
 3. **Configure and Build**
