@@ -26,7 +26,7 @@ using namespace cv;
 int main(int argc, char* argv[]) {
   if(argc < 3) {
     cout << "Usage: " << argv[0] << " model_name image" << endl;
-    char* default_argv[] = {(char*)"demo", (char*)"superpoint_tf.xmodel", (char*)"test.jpg"};
+    char* default_argv[] = {argv[0], (char*)"superpoint_tf.xmodel", (char*)"test.jpg"};
     argv = default_argv;
     // argc = 3;
   }
