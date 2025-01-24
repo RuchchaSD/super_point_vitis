@@ -1,3 +1,6 @@
 temp
-build_*
+build*
 # build/
+working/
+.vscode
+.git/
