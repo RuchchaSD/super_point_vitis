@@ -120,12 +120,17 @@ int main(int argc, char* argv[]) {
       imgs.push_back(img);
     }
     
+    //warm up the model
+    auto result = superpoint->run(imgs);
+
     // Run inference
     auto start = chrono::high_resolution_clock::now();
-    auto result = superpoint->run(imgs);
-    for (int i = 1; i < num_iterations; ++i) {
-      result = superpoint->run(imgs);
+    
+    for(int i = 1; i < num_iterations; ++i) {
+        imgs.push_back(img);
     }
+    result = superpoint->run(imgs);
+
     auto end = chrono::high_resolution_clock::now();
 
     // Report timing and throughput
