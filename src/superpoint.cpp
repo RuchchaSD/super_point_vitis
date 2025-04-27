@@ -51,6 +51,7 @@
 
 DEF_ENV_PARAM(DEBUG_SUPERPOINT, "0");
 DEF_ENV_PARAM(DUMP_SUPERPOINT, "0");
+DEF_ENV_PARAM(DEBUG_THREADS, "1");
 
 using namespace std;
 using namespace cv;
@@ -104,6 +105,10 @@ class ThreadSafeQueue {
     return true;
   }
 
+  bool empty() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return queue_.empty();
+  }
   void shutdown() {
     {
       std::lock_guard<std::mutex> lock(mutex_);
@@ -113,6 +118,12 @@ class ThreadSafeQueue {
   }
 };
 
+
+struct PreProcessTask {
+  int index;
+  cv::Mat image;;
+};
+  
 // Data structures for pipeline stages
 struct DpuInferenceTask {
   size_t index;
@@ -158,10 +169,9 @@ inline void L2_normalization(const int8_t* input, float scale, int channel, int 
       sumv = vmlaq_f32(sumv, vcvtq_f32_s32(vmovl_s16(vget_high_s16(s3))), vcvtq_f32_s32(vmovl_s16(vget_high_s16(s3))));
     }
     
-    float sum = 0.0f;
-    for (int i = 0; i < 4; i++) {
-      sum += vgetq_lane_f32(sumv, i);
-    }
+    // Using fixed indices instead of a loop variable
+    float sum = vgetq_lane_f32(sumv, 0) + vgetq_lane_f32(sumv, 1) + 
+                vgetq_lane_f32(sumv, 2) + vgetq_lane_f32(sumv, 3);
     
     float norm = 1.f / std::sqrt(sum) * scale;
     float32x4_t nrm = vdupq_n_f32(norm);
@@ -369,20 +379,15 @@ class SuperPointMultiImp : public SuperPoint {
  public:
   virtual ~SuperPointMultiImp();
   virtual std::vector<SuperPointResult> run(const std::vector<cv::Mat>& imgs) override;
+  void run(ThreadSafeQueue<cv::Mat>& imageQueue, ThreadSafeQueue<SuperPointResult>& result_queue,const bool& stop);
   virtual size_t get_input_batch() override;
   virtual int getInputWidth() const override;
   virtual int getInputHeight() const override;
 
  private:
-  void pre_process(const std::vector<cv::Mat>& input_images,
-                   ThreadSafeQueue<DpuInferenceTask>& task_queue,
-                   int start_idx, int end_idx);
-  void dpu_inference(ThreadSafeQueue<DpuInferenceTask>& task_queue,
-                     ThreadSafeQueue<DpuInferenceResult>& result_queue);
-  void post_process(ThreadSafeQueue<DpuInferenceResult>& result_queue,
-                    size_t thread_idx, size_t num_threads);
-
-  SuperPointResult process_result(const DpuInferenceResult& result);
+  DpuInferenceTask pre_process(const PreProcessTask& input_image);
+  DpuInferenceResult dpu_inference(const DpuInferenceTask& task, size_t runnerIdx);
+  SuperPointResult post_process(const DpuInferenceResult& result);
 
  private:
   static const int NUM_DPU_RUNNERS = 4;  // Fixed number of DPU runners
@@ -687,9 +692,7 @@ int SuperPointMultiImp::getInputHeight() const {
 }
 
 // Pre-processing thread function
-void SuperPointMultiImp::pre_process(const std::vector<cv::Mat>& input_images,
-                                ThreadSafeQueue<DpuInferenceTask>& task_queue,
-                                int start_idx, int end_idx) {
+DpuInferenceTask SuperPointMultiImp::pre_process(const PreProcessTask& input_image) {
   __TIC__(PREPROCESS)
   // scale0 is the scale factor for the input tensor
   float scale0 = vitis::ai::library::tensor_scale(input_tensors_[0]);
@@ -698,10 +701,9 @@ void SuperPointMultiImp::pre_process(const std::vector<cv::Mat>& input_images,
   float total_scale = scale0 * 0.00392157f;  // 1/255.0
   
   // Pre-process images in the assigned range
-  for (int i = start_idx; i < end_idx; ++i) {
-    const cv::Mat& img = input_images[i];
+    const cv::Mat& img = input_image.image;
     DpuInferenceTask task;
-    task.index = i;
+    task.index = input_image.index;
 
     // Resize image if needed
     __TIC__(RESIZE)
@@ -737,122 +739,66 @@ void SuperPointMultiImp::pre_process(const std::vector<cv::Mat>& input_images,
       task.input_data[j] = static_cast<int8_t>((gray_img.data[j] - mean) * total_scale);
     }
     __TOC__(SET_IMG)
-
+    __TOC__(PREPROCESS)
     // Enqueue task
-    task_queue.enqueue(task);
-  }
-  __TOC__(PREPROCESS)
+    return task;
 }
-
-void SuperPointMultiImp::dpu_inference(ThreadSafeQueue<DpuInferenceTask>& task_queue,
-                                      ThreadSafeQueue<DpuInferenceResult>& result_queue) {
+// DPU inference thread function
+ DpuInferenceResult SuperPointMultiImp::dpu_inference(const DpuInferenceTask& task, size_t runnerIdx) {
+  std::unique_ptr<vitis::ai::DpuTask> runner = std::move(runners_[runnerIdx]);
   __TIC__(DPU_INFERENCE_TOTAL)
-  // Create thread pool based on available DPU runners
-  std::vector<std::thread> worker_threads;
+  // Prepare input tensor
+  auto input_tensors = runner->getInputTensor(0u);
+  int8_t* input_data = (int8_t*)input_tensors[0].get_data(0);
   
-  // Launch one worker thread per DPU runner
-  for (size_t i = 0; i < runners_.size(); ++i) {
-    worker_threads.emplace_back([this, i, &task_queue, &result_queue]() {
-      auto& runner = runners_[i];
-      int tasks_processed = 0;
-      
-      while (true) {
-        // Get next task from queue
-        DpuInferenceTask task;
-        if (!task_queue.dequeue(task)) {
-          break;
-        }
+  // Copy input data efficiently
+  __TIC__(MEMCOPY_INPUT)
+  std::memcpy(input_data, task.input_data.data(), task.input_data.size());
+  __TOC__(MEMCOPY_INPUT)
 
-        // Prepare input tensor
-        auto input_tensors = runner->getInputTensor(0u);
-        int8_t* input_data = (int8_t*)input_tensors[0].get_data(0);
-        
-        // Copy input data efficiently
-        __TIC__(MEMCOPY_INPUT)
-        std::memcpy(input_data, task.input_data.data(), task.input_data.size());
-        __TOC__(MEMCOPY_INPUT)
+  // Run DPU inference
+  __TIC__(DPU_RUN)
+  runner->run(0u);
+  __TOC__(DPU_RUN)
 
-        // Run DPU inference
-        __TIC__(DPU_RUN)
-        runner->run(0u);
-        __TOC__(DPU_RUN)
+  // Get output tensors
+  auto output_tensors = sort_tensors(runner->getOutputTensor(0u), chans_);
 
-        // Get output tensors
-        auto output_tensors = sort_tensors(runner->getOutputTensor(0u), chans_);
+  // Prepare result
+  DpuInferenceResult result;
+  result.index = task.index;
+  result.scale_w = task.scale_w;
+  result.scale_h = task.scale_h;
 
-        // Prepare result
-        DpuInferenceResult result;
-        result.index = task.index;
-        result.scale_w = task.scale_w;
-        result.scale_h = task.scale_h;
+  // Copy output tensors efficiently
+  __TIC__(MEMCOPY_OUTPUT)
+  int8_t* out1 = (int8_t*)output_tensors[0].get_data(0);
+  int8_t* out2 = (int8_t*)output_tensors[1].get_data(0);
 
-        // Copy output tensors efficiently
-        __TIC__(MEMCOPY_OUTPUT)
-        int8_t* out1 = (int8_t*)output_tensors[0].get_data(0);
-        int8_t* out2 = (int8_t*)output_tensors[1].get_data(0);
+  size_t size1 = output_tensors[0].size / output_tensors[0].batch;
+  size_t size2 = output_tensors[1].size / output_tensors[1].batch;
 
-        size_t size1 = output_tensors[0].size / output_tensors[0].batch;
-        size_t size2 = output_tensors[1].size / output_tensors[1].batch;
+  result.output_data1.resize(size1);
+  result.output_data2.resize(size2);
+  
+  std::memcpy(result.output_data1.data(), out1, size1);
+  std::memcpy(result.output_data2.data(), out2, size2);
+  __TOC__(MEMCOPY_OUTPUT)
 
-        result.output_data1.resize(size1);
-        result.output_data2.resize(size2);
-        
-        std::memcpy(result.output_data1.data(), out1, size1);
-        std::memcpy(result.output_data2.data(), out2, size2);
-        __TOC__(MEMCOPY_OUTPUT)
+  // Get output scales
+  result.scale1 = vitis::ai::library::tensor_scale(output_tensors[0]);
+  result.scale2 = vitis::ai::library::tensor_scale(output_tensors[1]);
 
-        // Get output scales
-        result.scale1 = vitis::ai::library::tensor_scale(output_tensors[0]);
-        result.scale2 = vitis::ai::library::tensor_scale(output_tensors[1]);
-
-        // Enqueue result for post-processing
-        result_queue.enqueue(result);
-        tasks_processed++;
-      }
-    });
-  }
-
-  // Wait for all worker threads to finish
-  for (size_t i = 0; i < worker_threads.size(); ++i) {
-    worker_threads[i].join();
-  }
-
-  // Signal that all processing is complete
-  result_queue.shutdown();
   __TOC__(DPU_INFERENCE_TOTAL)
+  runners_[runnerIdx] = std::move(runner);  // Reassign the runner back to the pool
+
+  return result;
 }
 
-void SuperPointMultiImp::post_process(ThreadSafeQueue<DpuInferenceResult>& result_queue,
-                                      size_t thread_idx, size_t num_threads) {
-  __TIC__(POSTPROCESS_TOTAL)
-  int processed_count = 0;
-  
-  while (true) {
-    DpuInferenceResult result;
-    if (!result_queue.dequeue(result)) {
-      break; // Queue empty and shutdown
-    }
-    
-    // Process result
-    __TIC__(PROCESS_RESULT)
-    SuperPointResult sp_result = process_result(result);
-    __TOC__(PROCESS_RESULT)
-
-    // Store result in a thread-safe manner
-    {
-      std::lock_guard<std::mutex> lock(results_mutex_);
-      results_[result.index] = sp_result;
-    }
-    
-    processed_count++;
-  }
-  
-  __TOC__(POSTPROCESS_TOTAL)
-}
-
-// Function to process a single result
-SuperPointResult SuperPointMultiImp::process_result(const DpuInferenceResult& result) {
+// Function to post process a single result
+SuperPointResult SuperPointMultiImp::post_process(const DpuInferenceResult& result) {
   SuperPointResult sp_result;
+  sp_result.index = result.index;
   sp_result.scale_w = result.scale_w;
   sp_result.scale_h = result.scale_h;
 
@@ -945,87 +891,159 @@ SuperPointResult SuperPointMultiImp::process_result(const DpuInferenceResult& re
   return sp_result;
 }
 
-// Run function with proper promise handling
-std::vector<SuperPointResult> SuperPointMultiImp::run(const std::vector<cv::Mat>& imgs) {
+std::vector<SuperPointResult>  SuperPointMultiImp::run(const std::vector<cv::Mat>& imgs){
+  ThreadSafeQueue<cv::Mat> imageQueue;
+  ThreadSafeQueue<SuperPointResult> result_queue;
+  bool stop = false;
 
-  /*
-    TODO: make a preprocess task with images and enqueue it to the task queue
-    
-  */
-
-  /*
-    TODO: when the results come back from the preprocess tasks queue, make a task DPU inference task and enqueue it to the DPU inference queue
-
-  */
-
-  /*
-    TODO: when the results come back from the DPU inference queue, make a task postprocess task and enqueue it to the postprocess queue
-  */
-
-  /*
-    TODO: when the results come back from the postprocess queue, make a task to set the results and enqueue it to the result queue
-  */
-
-  // Create thread-safe queues for the pipeline
-  auto task_queue = std::make_shared<ThreadSafeQueue<DpuInferenceTask>>();
-  auto result_queue = std::make_shared<ThreadSafeQueue<DpuInferenceResult>>();
-  
-  // Resize results vector to match input size
-  results_.resize(imgs.size());
-
-  // Create a promise that will be fulfilled when processing is complete
-  auto promise = std::make_shared<std::promise<std::vector<SuperPointResult>>>();
-  auto future = promise->get_future();
-  
-  // Start pre-processing threads (multiple threads based on num_threads_)
-  std::vector<std::thread> preproc_threads;
-  int images_per_thread = imgs.size() / num_threads_;
-  int remaining_images = imgs.size() % num_threads_;
-  
-  int start_idx = 0;
-  for (int i = 0; i < num_threads_; ++i) {
-    int num_images = images_per_thread + (i < remaining_images ? 1 : 0);
-    int end_idx = start_idx + num_images;
-    
-    if (num_images > 0) {
-      preproc_threads.emplace_back([this, &imgs, task_queue, start_idx, end_idx]() {
-        this->pre_process(imgs, *task_queue, start_idx, end_idx);
-      });
-      start_idx = end_idx;
-    }
-  }
-
-  // Start DPU inference thread (fixed 4 DPU runners internally)
-  std::thread dpu_thread([this, task_queue, result_queue]() {
-    this->dpu_inference(*task_queue, *result_queue);
+  // Start pipeline processing in a separate thread
+  std::thread pipeline_thread([this, &imageQueue, &result_queue, &stop]() {
+    this->run(imageQueue, result_queue, stop);
   });
 
-  // Start post-processing threads 
-  std::vector<std::thread> postproc_threads;
-  for (int i = 0; i < num_threads_; ++i) {
-    postproc_threads.emplace_back([this, result_queue, i]() {
-      this->post_process(*result_queue, i, num_threads_);
-    });
+  // Queue all images
+  for (const auto& img : imgs) {
+    imageQueue.enqueue(img);
   }
+  size_t img_count = imgs.size();
+  // Signal that no more images will be added
+  stop = true;
+  
+  // Collect results
+  std::vector<SuperPointResult> results;
+  SuperPointResult result;
 
-  // Wait for all threads to finish
-  for (size_t i = 0; i < preproc_threads.size(); ++i) {
-    preproc_threads[i].join();
+  size_t count = 0;
+  while (count < img_count) {
+    result_queue.dequeue(result);
+    results.push_back(result);
+    count++;
   }
   
-  task_queue->shutdown();
-  
-  dpu_thread.join();
-  
-  for (size_t i = 0; i < postproc_threads.size(); ++i) {
-    postproc_threads[i].join();
+  // Wait for pipeline to finish
+  if (pipeline_thread.joinable()) {
+    pipeline_thread.join();
   }
+  
+  return results;
+}
 
-  // After all threads have completed, set the promise with the results
-  promise->set_value(results_);
+void SuperPointMultiImp::run(ThreadSafeQueue<cv::Mat>& imageQueue, ThreadSafeQueue<SuperPointResult>& result_queue, const bool& stop) {
+  // Create ThreadPools for preprocessing and postprocessing
+  ThreadPool preproc_pool(num_threads_);
+  ThreadPool postproc_pool(num_threads_);
+  ThreadPool dpu_pool(NUM_DPU_RUNNERS);
   
-  auto result = future.get();
-  return result;
+  std::vector<std::future<DpuInferenceTask>> preproc_futures;
+  std::vector<std::future<std::pair<DpuInferenceResult,size_t>>> dpu_futures;
+  std::vector<std::future<SuperPointResult>> postproc_futures;
+
+  // Keep track of available DPU runners
+  std::queue<size_t> available_runners;
+  for (size_t i = 0; i < runners_.size(); ++i) {
+    available_runners.push(i);
+  }
+  
+  int img_idx = 0; // Number of images processed
+  int running_count = 0; // Number of tasks currently running
+  while (!stop || running_count > 0 || !imageQueue.empty()) {
+    // Process new images if runners are available
+    cv::Mat img;
+    if (!imageQueue.empty() && running_count < NUM_DPU_RUNNERS + 2) {
+      while( !imageQueue.empty() && running_count < NUM_DPU_RUNNERS + 2){
+        imageQueue.dequeue(img);
+        img_idx++;
+        preproc_futures.push_back(
+          preproc_pool.enqueue([this, img, img_idx]() {
+            PreProcessTask task;
+            task.index = img_idx;
+            task.image = img;
+            return this->pre_process(task);
+          })
+        );
+        LOG_IF(INFO, ENV_PARAM(DEBUG_THREADS)) << "Enqueued image for preprocessing: " << img_idx;        
+        running_count++;
+      }
+    }
+
+    // Process completed preprocessing tasks
+    auto preproc_it = preproc_futures.begin();
+    while (preproc_it != preproc_futures.end()) {
+      if (preproc_it->wait_for(std::chrono::milliseconds(1)) == std::future_status::ready) {
+        auto task = preproc_it->get();
+        
+        // Only enqueue for DPU processing if runners are available
+        if (!available_runners.empty()) {
+          size_t runner_idx = available_runners.front();
+          available_runners.pop();
+          
+          dpu_futures.push_back(
+            dpu_pool.enqueue([this, task, runner_idx]() {
+              auto result = this->dpu_inference(task, runner_idx);
+              return std::make_pair(result, runner_idx);
+            })
+          );
+          LOG_IF(INFO, ENV_PARAM(DEBUG_THREADS)) << "Enqueued image for DPU inference: " << task.index;
+          // Remove the processed future
+          preproc_it = preproc_futures.erase(preproc_it);
+        } else {
+          // No runners available, try again later
+          ++preproc_it;
+        }
+      } else {
+        ++preproc_it;
+      }
+    }
+
+    // Process completed DPU inference tasks
+    auto dpu_it = dpu_futures.begin();
+    while (dpu_it != dpu_futures.end()) {
+      if (dpu_it->wait_for(std::chrono::milliseconds(1)) == std::future_status::ready) {
+        auto pair_result = dpu_it->get();
+        auto result = pair_result.first;
+        auto runner_idx = pair_result.second;
+        
+        // Return the runner to the available pool
+        available_runners.push(runner_idx);
+        
+        postproc_futures.push_back(
+          postproc_pool.enqueue([this, result]() {
+            return this->post_process(result);
+          })
+        );
+        LOG_IF(INFO, ENV_PARAM(DEBUG_THREADS)) << "Enqueued image for postprocessing: " << result.index;
+        
+        // Remove the processed future
+        dpu_it = dpu_futures.erase(dpu_it);
+      } else {
+        ++dpu_it;
+      }
+    }
+
+    // Process completed post-processing tasks
+    auto postproc_it = postproc_futures.begin();
+    while (postproc_it != postproc_futures.end()) {
+      if (postproc_it->wait_for(std::chrono::milliseconds(1)) == std::future_status::ready) {
+        auto result = postproc_it->get();
+        result_queue.enqueue(result);
+        
+        LOG_IF(INFO, ENV_PARAM(DEBUG_THREADS)) << "Enqueued result for output: " << result.index;
+        // Remove the processed future and decrement the running count
+        postproc_it = postproc_futures.erase(postproc_it);
+        running_count--;
+      } else {
+        ++postproc_it;
+      }
+    }
+    
+    // Add a small sleep to prevent busy waiting when nothing is ready
+    if (preproc_futures.empty() && dpu_futures.empty() && postproc_futures.empty() && !stop) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+  }
+  
+  // Signal the result queue that processing is complete
+  // result_queue.shutdown();
 }
 
 }  // namespace ai

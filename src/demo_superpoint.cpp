@@ -122,28 +122,17 @@ int main(int argc, char* argv[]) {
       imgs.push_back(img);
     }
     
+    //warm up the model
+    auto result = superpoint->run(imgs);
+
     // Run inference
     auto start = chrono::high_resolution_clock::now();
-
-    /* 
-    TODO: Run one image at a time implement an inner logic to store images in a buffer if  buffer
-    TODO: make one thread to load the images and another to receive the results
-    fills beyond a certain threshold, inform the user via a flag
-    logic:
-    while (true) {
-      if !superpoint->is_buffer_full() {
-        superpoint->run(imgs);
-      } else {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-      }
-    } 
-
-    TODO: take one image from the results buffer and draw the keypoints for the demo
-    */
-    auto result = superpoint->run(imgs);
-    for (int i = 1; i < num_iterations; ++i) {
-      result = superpoint->run(imgs);
+    
+    for(int i = 1; i < num_iterations; ++i) {
+        imgs.push_back(img);
     }
+    result = superpoint->run(imgs);
+    
     auto end = chrono::high_resolution_clock::now();
 
     // Report timing and throughput
