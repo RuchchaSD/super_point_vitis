@@ -45,7 +45,9 @@
 #include <vitis/ai/math.hpp>
 
 #define HW_SOFTMAX
-//#define ENABLE_NEON
+#ifdef __ARM_NEON
+#include <arm_neon.h>
+#endif
 
 DEF_ENV_PARAM(DEBUG_SUPERPOINT, "0");
 DEF_ENV_PARAM(DUMP_SUPERPOINT, "0");
@@ -131,6 +133,57 @@ struct DpuInferenceResult {
 
 // Common utility functions for both implementations
 inline void L2_normalization(const int8_t* input, float scale, int channel, int group, float* output) {
+#ifdef ENABLE_NEON
+  // NEON vectorized L2 normalization (from optimized implementation)
+  const size_t blk = 32;
+  for (size_t g = 0; g < group; ++g) {
+    const int8_t* src = input + g * channel;
+    float32x4_t sumv = vdupq_n_f32(0.f);
+    
+    for (size_t c = 0; c < channel; c += blk) {
+      int8x16_t v0 = vld1q_s8(src + c);
+      int8x16_t v1 = vld1q_s8(src + c + 16);
+      int16x8_t s0 = vmovl_s8(vget_low_s8(v0));
+      int16x8_t s1 = vmovl_s8(vget_high_s8(v0));
+      int16x8_t s2 = vmovl_s8(vget_low_s8(v1));
+      int16x8_t s3 = vmovl_s8(vget_high_s8(v1));
+      
+      sumv = vmlaq_f32(sumv, vcvtq_f32_s32(vmovl_s16(vget_low_s16(s0))), vcvtq_f32_s32(vmovl_s16(vget_low_s16(s0))));
+      sumv = vmlaq_f32(sumv, vcvtq_f32_s32(vmovl_s16(vget_high_s16(s0))), vcvtq_f32_s32(vmovl_s16(vget_high_s16(s0))));
+      sumv = vmlaq_f32(sumv, vcvtq_f32_s32(vmovl_s16(vget_low_s16(s1))), vcvtq_f32_s32(vmovl_s16(vget_low_s16(s1))));
+      sumv = vmlaq_f32(sumv, vcvtq_f32_s32(vmovl_s16(vget_high_s16(s1))), vcvtq_f32_s32(vmovl_s16(vget_high_s16(s1))));
+      sumv = vmlaq_f32(sumv, vcvtq_f32_s32(vmovl_s16(vget_low_s16(s2))), vcvtq_f32_s32(vmovl_s16(vget_low_s16(s2))));
+      sumv = vmlaq_f32(sumv, vcvtq_f32_s32(vmovl_s16(vget_high_s16(s2))), vcvtq_f32_s32(vmovl_s16(vget_high_s16(s2))));
+      sumv = vmlaq_f32(sumv, vcvtq_f32_s32(vmovl_s16(vget_low_s16(s3))), vcvtq_f32_s32(vmovl_s16(vget_low_s16(s3))));
+      sumv = vmlaq_f32(sumv, vcvtq_f32_s32(vmovl_s16(vget_high_s16(s3))), vcvtq_f32_s32(vmovl_s16(vget_high_s16(s3))));
+    }
+    
+    float sum = 0.0f;
+    for (int i = 0; i < 4; i++) {
+      sum += vgetq_lane_f32(sumv, i);
+    }
+    
+    float norm = 1.f / std::sqrt(sum) * scale;
+    float32x4_t nrm = vdupq_n_f32(norm);
+    
+    for (size_t c = 0; c < channel; c += 16) {
+      int8x16_t v = vld1q_s8(src + c);
+      int16x8_t lo = vmovl_s8(vget_low_s8(v));
+      int16x8_t hi = vmovl_s8(vget_high_s8(v));
+      
+      float32x4_t f0 = vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(lo))), nrm);
+      float32x4_t f1 = vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(lo))), nrm);
+      float32x4_t f2 = vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(hi))), nrm);
+      float32x4_t f3 = vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(hi))), nrm);
+      
+      vst1q_f32(output + g * channel + c + 0, f0);
+      vst1q_f32(output + g * channel + c + 4, f1);
+      vst1q_f32(output + g * channel + c + 8, f2);
+      vst1q_f32(output + g * channel + c + 12, f3);
+    }
+  }
+#else
+  // Scalar L2 normalization
   for (int i = 0; i < group; ++i) {
     float sum = 0.0;
     for (int j = 0; j < channel; ++j) {
@@ -144,62 +197,99 @@ inline void L2_normalization(const int8_t* input, float scale, int channel, int 
       output[pos] = (input[pos] * scale) / var;
     }
   }
+#endif
 }
 
-void nms_mask(vector<vector<int>>& grid, int x, int y, int dist_thresh) {
-  int h = grid.size();
-  int w = grid[0].size();
-  for (int i = max(0, x - dist_thresh); i < min(h, x + dist_thresh + 1); ++i) {
-    for (int j = max(0, y - dist_thresh); j < min(w, y + dist_thresh + 1); ++j) {
-      grid[i][j] = -1;
+// Bilinear interpolation helper function
+inline float bilinear_interpolation(float v00, float v01, float v10, float v11,
+                                   int x0, int y0, int x1, int y1,
+                                   float x, float y, bool border_check) {
+  if (border_check) {
+    // Out of bounds check
+    if (x0 < 0 || y0 < 0 || x1 < 0 || y1 < 0) {
+      return 0;
     }
   }
-  grid[x][y] = 1;
+  
+  float dx = (x - x0) / static_cast<float>(x1 - x0);
+  float dy = (y - y0) / static_cast<float>(y1 - y0);
+  
+  float val = (1 - dx) * (1 - dy) * v00 +
+              dx * (1 - dy) * v01 +
+              (1 - dx) * dy * v10 +
+              dx * dy * v11;
+  
+  return val;
 }
 
-void nms_fast(const vector<int>& xs, const vector<int>& ys, const vector<float>& ptscore,
-              vector<size_t>& keep_inds, const int inputW, const int inputH) {
-  vector<vector<int>> grid(inputW, vector<int>(inputH, 0));
-  vector<pair<float, size_t>> order;
-  int dist_thresh = 4;
-  for (size_t i = 0; i < ptscore.size(); ++i) {
-    order.push_back({ptscore[i], i});
+// Optimized bilinear sampling for descriptor maps
+inline void bilinear_sample(const float* map, size_t h, size_t w, size_t ch,
+                           const std::vector<std::pair<float, float>>& pts,
+                           std::vector<std::vector<float>>& descs) {
+  descs.resize(pts.size());
+  for (size_t i = 0; i < pts.size(); ++i) {
+    int x0 = floor(pts[i].first / 8.f);
+    int y0 = floor(pts[i].second / 8.f);
+    int x1 = std::min<int>(x0 + 1, w - 1);
+    int y1 = std::min<int>(y0 + 1, h - 1);
+    float dx = pts[i].first / 8.f - x0;
+    float dy = pts[i].second / 8.f - y0;
+    float w00 = (1 - dx) * (1 - dy);
+    float w01 = dx * (1 - dy);
+    float w10 = (1 - dx) * dy;
+    float w11 = dx * dy;
+    
+    descs[i].resize(ch);
+    float norm = 0.f;
+    for (size_t c = 0; c < ch; ++c) {
+      float val = map[c + ch * (y0 * w + x0)] * w00 +
+                 map[c + ch * (y0 * w + x1)] * w01 +
+                 map[c + ch * (y1 * w + x0)] * w10 +
+                 map[c + ch * (y1 * w + x1)] * w11;
+      descs[i][c] = val;
+      norm += val * val;
+    }
+    
+    // Normalize the descriptor
+    norm = 1.f / std::sqrt(norm);
+    for (auto& v : descs[i]) v *= norm;
   }
-  std::stable_sort(order.begin(), order.end(),
-                   [](const pair<float, size_t>& ls, const pair<float, size_t>& rs) {
-                     return ls.first > rs.first;
-                   });
-  vector<size_t> ordered;
-  transform(order.begin(), order.end(), back_inserter(ordered),
-            [](auto& km) { return km.second; });
+}
 
-  for (size_t _i = 0; _i < ordered.size(); ++_i) {
-    size_t i = ordered[_i];
-    int x = xs[i];
-    int y = ys[i];
-    if (grid[x][y] == 0 && x >= dist_thresh && x < inputW - dist_thresh && y >= dist_thresh &&
-        y < inputH - dist_thresh) {
-      keep_inds.push_back(i);
-      nms_mask(grid, x, y, dist_thresh);
+// Optimized NMS implementation from the optimized code
+inline void nms_fast(const std::vector<int>& xs, const std::vector<int>& ys,
+                    const std::vector<float>& score, int w, int h,
+                    std::vector<size_t>& keep) {
+  const int radius = 4;
+  std::vector<int> grid(w * h, 0);
+  std::vector<size_t> order(xs.size());
+  std::iota(order.begin(), order.end(), 0);
+  std::sort(order.begin(), order.end(), [&](size_t a, size_t b){ return score[a] > score[b]; });
+  for (auto idx : order) {
+    int x = xs[idx], y = ys[idx];
+    if (x < radius || x >= w - radius || y < radius || y >= h - radius) continue;
+    bool skip = false;
+    for (int i = -radius; i <= radius && !skip; ++i)
+      for (int j = -radius; j <= radius; ++j)
+        if (grid[(y + i) * w + (x + j)] == 1) { skip = true; break; }
+    if (!skip) {
+      keep.push_back(idx);
+      for (int i = -radius; i <= radius; ++i)
+        for (int j = -radius; j <= radius; ++j)
+          grid[(y + i) * w + (x + j)] = 1;
     }
   }
 }
 
-float bilinear_interpolation(float v_xmin_ymin, float v_ymin_xmax, float v_ymax_xmin,
-                             float v_xmax_ymax, int xmin, int ymin, int xmax, int ymax, float x,
-                             float y, bool cout_value) {
-  float value = v_xmin_ymin * (xmax - x) * (ymax - y) +
-                v_ymin_xmax * (ymax - y) * (x - xmin) +
-                v_ymax_xmin * (y - ymin) * (xmax - x) +
-                v_xmax_ymax * (x - xmin) * (y - ymin);
-  return value;
+// Helper function to match existing interface with the optimized NMS
+inline void nms_fast(const std::vector<int>& xs, const std::vector<int>& ys,
+                    const std::vector<float>& score, std::vector<size_t>& keep_inds, int w, int h) {
+  nms_fast(xs, ys, score, w, h, keep_inds);
 }
 
 vector<vector<float>> grid_sample(const float* desc_map, const vector<pair<float, float>>& coarse_pts,
                                  const size_t channel, const size_t outputH, const size_t outputW) {
-  vector<vector<float>> desc(coarse_pts.size());
-  // std::cout << "grid_sample: channel " << channel << " h: " << outputH << " w: " << outputW << std::endl;
-  // std::cout << "coarse_pts size: " << coarse_pts.size() << std::endl;
+  vector<vector<float>> descs(coarse_pts.size());
   for (size_t i = 0; i < coarse_pts.size(); ++i) {
     float x = (coarse_pts[i].first + 1) / 8 - 0.5;
     float y = (coarse_pts[i].second + 1) / 8 - 0.5;
@@ -208,12 +298,6 @@ vector<vector<float>> grid_sample(const float* desc_map, const vector<pair<float
     int xmax = xmin + 1;
     int ymax = ymin + 1;
 
-    // if(xmin < 0 || xmax >= outputW || ymin < 0 || ymax >= outputH) {
-    //   LOG(WARNING) << "Grid sample out of bounds: (" << xmin << ", " << ymin << "), (" << xmax << ", " << ymax << ")";
-    //   continue;
-    // }
-    
-    // Bounds checking to avoid segmentation fault
     xmin = std::max(0, std::min(xmin, static_cast<int>(outputW) - 1));
     xmax = std::max(0, std::min(xmax, static_cast<int>(outputW) - 1));
     ymin = std::max(0, std::min(ymin, static_cast<int>(outputH) - 1));
@@ -229,14 +313,14 @@ vector<vector<float>> grid_sample(const float* desc_map, const vector<pair<float
             desc_map[j + (ymax * outputW + xmin) * channel],
             desc_map[j + (ymax * outputW + xmax) * channel], xmin, ymin, xmax, ymax, x, y, false);
         divisor += value * value;
-        desc[i].push_back(value);
+        descs[i].push_back(value);
       }
       for (size_t j = 0; j < channel; ++j) {
-        desc[i][j] /= sqrt(divisor);  // L2 normalize
+        descs[i][j] /= sqrt(divisor);  // L2 normalize
       }
     }
   }
-  return desc;
+  return descs;
 }
 
 // Single-threaded implementation
@@ -280,7 +364,7 @@ class SuperPointSingleImp : public SuperPoint {
 // Multi-threaded implementation
 class SuperPointMultiImp : public SuperPoint {
  public:
-  SuperPointMultiImp(const std::string& model_name, int num_runners);
+  SuperPointMultiImp(const std::string& model_name, int num_threads);
 
  public:
   virtual ~SuperPointMultiImp();
@@ -291,14 +375,20 @@ class SuperPointMultiImp : public SuperPoint {
 
  private:
   void pre_process(const std::vector<cv::Mat>& input_images,
-                   ThreadSafeQueue<DpuInferenceTask>& task_queue);
+                   ThreadSafeQueue<DpuInferenceTask>& task_queue,
+                   int start_idx, int end_idx);
   void dpu_inference(ThreadSafeQueue<DpuInferenceTask>& task_queue,
                      ThreadSafeQueue<DpuInferenceResult>& result_queue);
-  void post_process(ThreadSafeQueue<DpuInferenceResult>& result_queue);
+  void post_process(ThreadSafeQueue<DpuInferenceResult>& result_queue,
+                    size_t thread_idx, size_t num_threads);
 
   SuperPointResult process_result(const DpuInferenceResult& result);
 
  private:
+  static const int NUM_DPU_RUNNERS = 4;  // Fixed number of DPU runners
+  int num_threads_;  // Number of pre/post-processing threads
+  std::mutex results_mutex_;  // Mutex for synchronizing results access
+
   std::vector<std::unique_ptr<vitis::ai::DpuTask>> runners_;
   std::vector<SuperPointResult> results_;
   std::vector<vitis::ai::library::InputTensor> input_tensors_;
@@ -558,9 +648,10 @@ int SuperPointSingleImp::getInputWidth() const { return task_->getInputTensor(0u
 int SuperPointSingleImp::getInputHeight() const { return task_->getInputTensor(0u)[0].height; }
 
 // Multi-threaded implementation
-SuperPointMultiImp::SuperPointMultiImp(const std::string& model_name, int num_runners)
-    : SuperPoint(model_name) {
-  for (int i = 0; i < num_runners; ++i) {
+SuperPointMultiImp::SuperPointMultiImp(const std::string& model_name, int num_threads)
+    : SuperPoint(model_name), num_threads_(num_threads) {
+  // Always create exactly 4 DPU runners regardless of input parameter
+  for (int i = 0; i < NUM_DPU_RUNNERS; ++i) {
     runners_.emplace_back(vitis::ai::DpuTask::create(model_name));
   }
   input_tensors_ = runners_[0]->getInputTensor(0u);
@@ -597,127 +688,171 @@ int SuperPointMultiImp::getInputHeight() const {
 
 // Pre-processing thread function
 void SuperPointMultiImp::pre_process(const std::vector<cv::Mat>& input_images,
-                                ThreadSafeQueue<DpuInferenceTask>& task_queue) {
+                                ThreadSafeQueue<DpuInferenceTask>& task_queue,
+                                int start_idx, int end_idx) {
+  __TIC__(PREPROCESS)
   // scale0 is the scale factor for the input tensor
   float scale0 = vitis::ai::library::tensor_scale(input_tensors_[0]);
   
   float mean = 0;
-  float total_scale = scale0 * 0.00392157;
-  // Pre-process images
-  for (size_t i = 0; i < input_images.size(); ++i) {
-    cv::Mat img = input_images[i];
+  float total_scale = scale0 * 0.00392157f;  // 1/255.0
+  
+  // Pre-process images in the assigned range
+  for (int i = start_idx; i < end_idx; ++i) {
+    const cv::Mat& img = input_images[i];
     DpuInferenceTask task;
     task.index = i;
 
-    // Resize image
+    // Resize image if needed
+    __TIC__(RESIZE)
     cv::Mat resized_img;
     if (img.rows == sHeight && img.cols == sWidth) {
       resized_img = img;
     } else {
       cv::resize(img, resized_img, cv::Size(sWidth, sHeight));
     }
-    task.scale_w = img.cols / (float)sWidth;
-    task.scale_h = img.rows / (float)sHeight;
+    __TOC__(RESIZE)
+    
+    task.scale_w = img.cols / static_cast<float>(sWidth);
+    task.scale_h = img.rows / static_cast<float>(sHeight);
 
-    // Normalize and scale
+    // Convert to grayscale
+    __TIC__(SET_IMG)
     cv::Mat gray_img;
-    cv::cvtColor(resized_img, gray_img, cv::COLOR_BGR2GRAY);
+    if (img.channels() == 3) {
+      cv::cvtColor(resized_img, gray_img, cv::COLOR_BGR2GRAY);
+    } else {
+      gray_img = resized_img;
+    }
 
-
-    gray_img.convertTo(gray_img, -1, total_scale, -mean * total_scale);
-
-    // Convert to int8
-    cv::Mat input_img;
-    gray_img.convertTo(input_img, CV_8SC1, 1.0);
-
-    // Copy data to input_data vector
-    task.input_data.assign((int8_t*)input_img.data, (int8_t*)input_img.data + input_img.total());
+    // Allocate memory for input data
+    task.input_data.resize(sWidth * sHeight);
+    
+    // Optimize conversion to int8_t with scale
+#ifdef ENABLE_NEON
+    // NEON optimization would go here
+    // But keeping scalar implementation for clarity
+#endif
+    for (int j = 0; j < gray_img.rows * gray_img.cols; ++j) {
+      task.input_data[j] = static_cast<int8_t>((gray_img.data[j] - mean) * total_scale);
+    }
+    __TOC__(SET_IMG)
 
     // Enqueue task
     task_queue.enqueue(task);
   }
-  task_queue.shutdown();
+  __TOC__(PREPROCESS)
 }
 
-// DPU inference thread function
 void SuperPointMultiImp::dpu_inference(ThreadSafeQueue<DpuInferenceTask>& task_queue,
-                                  ThreadSafeQueue<DpuInferenceResult>& result_queue) {
-  size_t runner_index = 0;
-  size_t num_runners = runners_.size();
-  std::vector<std::future<void>> futures;
+                                      ThreadSafeQueue<DpuInferenceResult>& result_queue) {
+  __TIC__(DPU_INFERENCE_TOTAL)
+  // Create thread pool based on available DPU runners
+  std::vector<std::thread> worker_threads;
+  
+  // Launch one worker thread per DPU runner
+  for (size_t i = 0; i < runners_.size(); ++i) {
+    worker_threads.emplace_back([this, i, &task_queue, &result_queue]() {
+      auto& runner = runners_[i];
+      int tasks_processed = 0;
+      
+      while (true) {
+        // Get next task from queue
+        DpuInferenceTask task;
+        if (!task_queue.dequeue(task)) {
+          break;
+        }
 
-  while (true) {
-    DpuInferenceTask task;
-    if (!task_queue.dequeue(task)) {
-      break;
-    }
+        // Prepare input tensor
+        auto input_tensors = runner->getInputTensor(0u);
+        int8_t* input_data = (int8_t*)input_tensors[0].get_data(0);
+        
+        // Copy input data efficiently
+        __TIC__(MEMCOPY_INPUT)
+        std::memcpy(input_data, task.input_data.data(), task.input_data.size());
+        __TOC__(MEMCOPY_INPUT)
 
-    auto runner = runners_[runner_index % num_runners].get();
-    runner_index++;
+        // Run DPU inference
+        __TIC__(DPU_RUN)
+        runner->run(0u);
+        __TOC__(DPU_RUN)
 
-    // Prepare input tensor
-    auto input_tensors = runner->getInputTensor(0u);
-    int8_t* input_data = (int8_t*)input_tensors[0].get_data(0);
-    memcpy(input_data, task.input_data.data(), task.input_data.size());
+        // Get output tensors
+        auto output_tensors = sort_tensors(runner->getOutputTensor(0u), chans_);
 
-    // Run DPU inference asynchronously
-    futures.emplace_back(std::async(std::launch::async, [this, runner, task, &result_queue]() {
-      runner->run(0u);
+        // Prepare result
+        DpuInferenceResult result;
+        result.index = task.index;
+        result.scale_w = task.scale_w;
+        result.scale_h = task.scale_h;
 
-      // Collect output tensors
-      auto output_tensors = sort_tensors(runner->getOutputTensor(0u), chans_);
+        // Copy output tensors efficiently
+        __TIC__(MEMCOPY_OUTPUT)
+        int8_t* out1 = (int8_t*)output_tensors[0].get_data(0);
+        int8_t* out2 = (int8_t*)output_tensors[1].get_data(0);
 
-      DpuInferenceResult result;
-      result.index = task.index;
-      result.scale_w = task.scale_w;
-      result.scale_h = task.scale_h;
+        size_t size1 = output_tensors[0].size / output_tensors[0].batch;
+        size_t size2 = output_tensors[1].size / output_tensors[1].batch;
 
-      // Copy output data
-      int8_t* out1 = (int8_t*)output_tensors[0].get_data(0);
-      int8_t* out2 = (int8_t*)output_tensors[1].get_data(0);
+        result.output_data1.resize(size1);
+        result.output_data2.resize(size2);
+        
+        std::memcpy(result.output_data1.data(), out1, size1);
+        std::memcpy(result.output_data2.data(), out2, size2);
+        __TOC__(MEMCOPY_OUTPUT)
 
-      size_t size1 = output_tensors[0].size / output_tensors[0].batch;
-      size_t size2 = output_tensors[1].size / output_tensors[1].batch;
+        // Get output scales
+        result.scale1 = vitis::ai::library::tensor_scale(output_tensors[0]);
+        result.scale2 = vitis::ai::library::tensor_scale(output_tensors[1]);
 
-      result.output_data1.assign(out1, out1 + size1);
-      result.output_data2.assign(out2, out2 + size2);
-
-      // Get scales
-      result.scale1 = vitis::ai::library::tensor_scale(output_tensors[0]);
-      result.scale2 = vitis::ai::library::tensor_scale(output_tensors[1]);
-
-      // Enqueue result
-      result_queue.enqueue(result);
-    }));
+        // Enqueue result for post-processing
+        result_queue.enqueue(result);
+        tasks_processed++;
+      }
+    });
   }
 
-  // Wait for all inferences to complete
-  for (auto& fut : futures) {
-    fut.get();
+  // Wait for all worker threads to finish
+  for (size_t i = 0; i < worker_threads.size(); ++i) {
+    worker_threads[i].join();
   }
+
+  // Signal that all processing is complete
   result_queue.shutdown();
+  __TOC__(DPU_INFERENCE_TOTAL)
 }
 
-// Post-processing thread function
-void SuperPointMultiImp::post_process(ThreadSafeQueue<DpuInferenceResult>& result_queue) {
+void SuperPointMultiImp::post_process(ThreadSafeQueue<DpuInferenceResult>& result_queue,
+                                      size_t thread_idx, size_t num_threads) {
+  __TIC__(POSTPROCESS_TOTAL)
+  int processed_count = 0;
+  
   while (true) {
     DpuInferenceResult result;
     if (!result_queue.dequeue(result)) {
-      break;
+      break; // Queue empty and shutdown
     }
-
+    
     // Process result
+    __TIC__(PROCESS_RESULT)
     SuperPointResult sp_result = process_result(result);
+    __TOC__(PROCESS_RESULT)
 
-    // Store result
-    results_[result.index] = sp_result;
+    // Store result in a thread-safe manner
+    {
+      std::lock_guard<std::mutex> lock(results_mutex_);
+      results_[result.index] = sp_result;
+    }
+    
+    processed_count++;
   }
+  
+  __TOC__(POSTPROCESS_TOTAL)
 }
 
 // Function to process a single result
 SuperPointResult SuperPointMultiImp::process_result(const DpuInferenceResult& result) {
   SuperPointResult sp_result;
-  sp_result.index = result.index;
   sp_result.scale_w = result.scale_w;
   sp_result.scale_h = result.scale_h;
 
@@ -731,6 +866,7 @@ SuperPointResult SuperPointMultiImp::process_result(const DpuInferenceResult& re
   vector<float> output1(outputSize1);
 
   // Softmax
+  __TIC__(SOFTMAX)
 #ifndef HW_SOFTMAX
   for (int i = 0; i < outputH * outputW; ++i) {
     float sum{0.0f};
@@ -746,8 +882,10 @@ SuperPointResult SuperPointMultiImp::process_result(const DpuInferenceResult& re
 #else
   vitis::ai::softmax(out1, scale1, channel1, outputH * outputW, output1.data());
 #endif
+  __TOC__(SOFTMAX)
 
   // Heatmap processing
+  __TIC__(HEATMAP)
   int reduced_size = (channel1 - 1) * outputH * outputW;
   vector<float> heatmap(reduced_size);
   // Remove heatmap[-1,:,:]
@@ -755,8 +893,10 @@ SuperPointResult SuperPointMultiImp::process_result(const DpuInferenceResult& re
     memcpy(heatmap.data() + i * (channel1 - 1), output1.data() + i * channel1,
            sizeof(float) * (channel1 - 1));
   }
+  __TOC__(HEATMAP)
 
   // Keypoint detection
+  __TIC__(SORT)
   vector<float> tmp;
   tmp.reserve(reduced_size);
   vector<int> xs, ys;
@@ -776,15 +916,21 @@ SuperPointResult SuperPointMultiImp::process_result(const DpuInferenceResult& re
       }
     }
   }
+  __TOC__(SORT)
 
-  // NMS
+  // NMS - using our optimized version
+  __TIC__(NMS)
   nms_fast(xs, ys, ptscore, keep_inds, sWidth, sHeight);
+  __TOC__(NMS)
 
-  // L2 Normalization
+  // L2 Normalization - using our optimized version
+  __TIC__(L2_NORMAL)
   vector<float> output2(outputSize2);
   L2_normalization(out2, scale2, channel2, output2H * output2W, output2.data());
+  __TOC__(L2_NORMAL)
 
-  // Descriptor extraction
+  // Extract keypoints
+  __TIC__(DESC)
   for (size_t i = 0; i < keep_inds.size(); ++i) {
     std::pair<float, float> pt;
     pt.first = float(xs[keep_inds[i]]);
@@ -792,33 +938,94 @@ SuperPointResult SuperPointMultiImp::process_result(const DpuInferenceResult& re
     sp_result.keypoints.push_back(pt);
   }
 
-  sp_result.descriptor = grid_sample(output2.data(), sp_result.keypoints, channel2, output2H, output2W);
+  // Descriptor extraction - use optimized bilinear sampling
+  bilinear_sample(output2.data(), output2H, output2W, channel2, sp_result.keypoints, sp_result.descriptor);
+  __TOC__(DESC)
 
   return sp_result;
 }
 
-// Run function
+// Run function with proper promise handling
 std::vector<SuperPointResult> SuperPointMultiImp::run(const std::vector<cv::Mat>& imgs) {
+
+  /*
+    TODO: make a preprocess task with images and enqueue it to the task queue
+    
+  */
+
+  /*
+    TODO: when the results come back from the preprocess tasks queue, make a task DPU inference task and enqueue it to the DPU inference queue
+
+  */
+
+  /*
+    TODO: when the results come back from the DPU inference queue, make a task postprocess task and enqueue it to the postprocess queue
+  */
+
+  /*
+    TODO: when the results come back from the postprocess queue, make a task to set the results and enqueue it to the result queue
+  */
+
+  // Create thread-safe queues for the pipeline
+  auto task_queue = std::make_shared<ThreadSafeQueue<DpuInferenceTask>>();
+  auto result_queue = std::make_shared<ThreadSafeQueue<DpuInferenceResult>>();
+  
+  // Resize results vector to match input size
   results_.resize(imgs.size());
 
-  ThreadSafeQueue<DpuInferenceTask> task_queue;
-  ThreadSafeQueue<DpuInferenceResult> result_queue;
+  // Create a promise that will be fulfilled when processing is complete
+  auto promise = std::make_shared<std::promise<std::vector<SuperPointResult>>>();
+  auto future = promise->get_future();
+  
+  // Start pre-processing threads (multiple threads based on num_threads_)
+  std::vector<std::thread> preproc_threads;
+  int images_per_thread = imgs.size() / num_threads_;
+  int remaining_images = imgs.size() % num_threads_;
+  
+  int start_idx = 0;
+  for (int i = 0; i < num_threads_; ++i) {
+    int num_images = images_per_thread + (i < remaining_images ? 1 : 0);
+    int end_idx = start_idx + num_images;
+    
+    if (num_images > 0) {
+      preproc_threads.emplace_back([this, &imgs, task_queue, start_idx, end_idx]() {
+        this->pre_process(imgs, *task_queue, start_idx, end_idx);
+      });
+      start_idx = end_idx;
+    }
+  }
 
-  // Start pre-processing thread
-  std::thread preproc_thread(&SuperPointMultiImp::pre_process, this, std::ref(imgs), std::ref(task_queue));
+  // Start DPU inference thread (fixed 4 DPU runners internally)
+  std::thread dpu_thread([this, task_queue, result_queue]() {
+    this->dpu_inference(*task_queue, *result_queue);
+  });
 
-  // Start DPU inference thread
-  std::thread dpu_thread(&SuperPointMultiImp::dpu_inference, this, std::ref(task_queue), std::ref(result_queue));
+  // Start post-processing threads 
+  std::vector<std::thread> postproc_threads;
+  for (int i = 0; i < num_threads_; ++i) {
+    postproc_threads.emplace_back([this, result_queue, i]() {
+      this->post_process(*result_queue, i, num_threads_);
+    });
+  }
 
-  // Start post-processing thread
-  std::thread postproc_thread(&SuperPointMultiImp::post_process, this, std::ref(result_queue));
-
-  // Wait for threads to finish
-  preproc_thread.join();
+  // Wait for all threads to finish
+  for (size_t i = 0; i < preproc_threads.size(); ++i) {
+    preproc_threads[i].join();
+  }
+  
+  task_queue->shutdown();
+  
   dpu_thread.join();
-  postproc_thread.join();
+  
+  for (size_t i = 0; i < postproc_threads.size(); ++i) {
+    postproc_threads[i].join();
+  }
 
-  return results_;
+  // After all threads have completed, set the promise with the results
+  promise->set_value(results_);
+  
+  auto result = future.get();
+  return result;
 }
 
 }  // namespace ai

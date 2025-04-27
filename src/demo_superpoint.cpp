@@ -28,16 +28,17 @@ void print_usage(char* prog_name) {
   std::cout << "Usage: " << prog_name << " [options] model_name image" << std::endl;
   std::cout << "Options:" << std::endl;
   std::cout << "  -s            Use single-threaded implementation (default: multi-threaded)" << std::endl;
-  std::cout << "  -t <num>      Number of DPU runners to use (default: 2)" << std::endl;
-  std::cout << "  -i <num>      Number of iterations (default: 1)" << std::endl;
+  std::cout << "  -t <num>      Number of preprocessing/postprocessing threads to use (default: 2)" << std::endl;
+  std::cout << "                Note: DPU runners fixed at 4" << std::endl;
+  std::cout << "  -i <num>      Number of iterations (default: 10)" << std::endl;
   std::cout << "Example: " << prog_name << " -s superpoint_tf.xmodel test.jpg" << std::endl;
-  std::cout << "         " << prog_name << " -t 4 superpoint_tf.xmodel test.jpg" << std::endl;
+  std::cout << "         " << prog_name << " -t 8 superpoint_tf.xmodel test.jpg" << std::endl;
 }
 
 int main(int argc, char* argv[]) {
   // Default parameters
   bool use_single_threaded = false;
-  int num_runners = 2;
+  int num_threads = 2;  // Now controls pre/post-processing threads (DPU runners fixed at 4) 
   int num_iterations = 10;  // Default changed to 10 for throughput calculation
   std::string model_name;
   std::string image_path;
@@ -51,7 +52,7 @@ int main(int argc, char* argv[]) {
       arg_index++;
     } else if (arg == "-t") {
       if (arg_index + 1 < argc) {
-        num_runners = std::stoi(argv[arg_index + 1]);
+        num_threads = std::stoi(argv[arg_index + 1]);
         arg_index += 2;
       } else {
         std::cerr << "Error: Missing value for -t option" << std::endl;
@@ -89,7 +90,8 @@ int main(int argc, char* argv[]) {
   std::cout << "Configuration:" << std::endl;
   std::cout << "- Implementation: " << (use_single_threaded ? "Single-threaded" : "Multi-threaded") << std::endl;
   if (!use_single_threaded) {
-    std::cout << "- Number of runners: " << num_runners << std::endl;
+    std::cout << "- Number of pre/post-processing threads: " << num_threads << std::endl;
+    std::cout << "- Number of DPU runners: 4 (fixed)" << std::endl;
   }
   std::cout << "- Model: " << model_name << std::endl;
   std::cout << "- Image: " << image_path << std::endl;
@@ -108,7 +110,7 @@ int main(int argc, char* argv[]) {
                     vitis::ai::SuperPoint::ImplType::SINGLE_THREADED : 
                     vitis::ai::SuperPoint::ImplType::MULTI_THREADED;
     
-    auto superpoint = vitis::ai::SuperPoint::create(model_name, impl_type, num_runners);
+    auto superpoint = vitis::ai::SuperPoint::create(model_name, impl_type, num_threads);
     if (!superpoint) {
        std::cerr << "Error: Failed to create SuperPoint instance" << std::endl;
        return 1;
@@ -122,6 +124,22 @@ int main(int argc, char* argv[]) {
     
     // Run inference
     auto start = chrono::high_resolution_clock::now();
+
+    /* 
+    TODO: Run one image at a time implement an inner logic to store images in a buffer if  buffer
+    TODO: make one thread to load the images and another to receive the results
+    fills beyond a certain threshold, inform the user via a flag
+    logic:
+    while (true) {
+      if !superpoint->is_buffer_full() {
+        superpoint->run(imgs);
+      } else {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      }
+    } 
+
+    TODO: take one image from the results buffer and draw the keypoints for the demo
+    */
     auto result = superpoint->run(imgs);
     for (int i = 1; i < num_iterations; ++i) {
       result = superpoint->run(imgs);
