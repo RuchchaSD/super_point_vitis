@@ -61,7 +61,6 @@
 #include <vector>
 #include <utility>
 
-
 namespace vitis {
 namespace ai {
     
@@ -75,10 +74,17 @@ namespace ai {
 
   class SuperPoint {
     public:
-      static std::unique_ptr<SuperPoint> create(const std::string& model_name, int num_runners);
+      enum class ImplType {
+        SINGLE_THREADED,
+        MULTI_THREADED
+      };
+      
+      static std::unique_ptr<SuperPoint> create(const std::string& model_name, 
+                                                ImplType impl_type = ImplType::MULTI_THREADED,
+                                                int num_runners = 1);
 
     protected:
-      explicit SuperPoint(const std::string& model_name, int num_runners);
+      explicit SuperPoint(const std::string& model_name);
       SuperPoint(const SuperPoint&) = delete;
       SuperPoint& operator=(const SuperPoint&) = delete;
 
@@ -88,6 +94,6 @@ namespace ai {
       virtual size_t get_input_batch() = 0;
       virtual int getInputWidth() const = 0;
       virtual int getInputHeight() const = 0;
-    };
-  }
+  };
+}
 }

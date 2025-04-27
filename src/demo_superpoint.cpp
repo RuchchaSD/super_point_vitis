@@ -15,6 +15,7 @@
  */
 #include <glog/logging.h>
 #include <iostream>
+#include <string>
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
@@ -23,51 +24,146 @@
 using namespace std;
 using namespace cv;
 
+void print_usage(char* prog_name) {
+  std::cout << "Usage: " << prog_name << " [options] model_name image" << std::endl;
+  std::cout << "Options:" << std::endl;
+  std::cout << "  -s            Use single-threaded implementation (default: multi-threaded)" << std::endl;
+  std::cout << "  -t <num>      Number of DPU runners to use (default: 2)" << std::endl;
+  std::cout << "  -i <num>      Number of iterations (default: 1)" << std::endl;
+  std::cout << "Example: " << prog_name << " -s superpoint_tf.xmodel test.jpg" << std::endl;
+  std::cout << "         " << prog_name << " -t 4 superpoint_tf.xmodel test.jpg" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
-  if(argc < 3) {
-    cout << "Usage: " << argv[0] << " model_name image" << endl;
-    char* default_argv[] = {argv[0], (char*)"superpoint_tf.xmodel", (char*)"test.jpg"};
-    argv = default_argv;
-    // argc = 3;
+  // Default parameters
+  bool use_single_threaded = false;
+  int num_runners = 2;
+  int num_iterations = 10;  // Default changed to 10 for throughput calculation
+  std::string model_name;
+  std::string image_path;
+  
+  // Parse command line arguments
+  int arg_index = 1;
+  while (arg_index < argc) {
+    std::string arg = argv[arg_index];
+    if (arg == "-s") {
+      use_single_threaded = true;
+      arg_index++;
+    } else if (arg == "-t") {
+      if (arg_index + 1 < argc) {
+        num_runners = std::stoi(argv[arg_index + 1]);
+        arg_index += 2;
+      } else {
+        std::cerr << "Error: Missing value for -t option" << std::endl;
+        print_usage(argv[0]);
+        return 1;
+      }
+    } else if (arg == "-i") {
+      if (arg_index + 1 < argc) {
+        num_iterations = std::stoi(argv[arg_index + 1]);
+        arg_index += 2;
+      } else {
+        std::cerr << "Error: Missing value for -i option" << std::endl;
+        print_usage(argv[0]);
+        return 1;
+      }
+    } else if (arg == "-h" || arg == "--help") {
+      print_usage(argv[0]);
+      return 0;
+    } else {
+      break;
+    }
   }
-  int nIter = 1;
-  string model_name = argv[1];
-  Mat img = imread(argv[2], cv::IMREAD_GRAYSCALE);
-  {
-    auto superpoint = vitis::ai::SuperPoint::create(model_name, 5);
-    if (!superpoint) { // supress coverity complain
-       std::cerr <<"create error\n";
-       abort();
+  
+  // Get positional arguments
+  if (arg_index + 1 < argc) {
+    model_name = argv[arg_index];
+    image_path = argv[arg_index + 1];
+  } else {
+    // Use default values if not provided
+    std::cout << "Using default model and image" << std::endl;
+    model_name = "../superpoint_tf.xmodel";
+    image_path = "../test.jpg";
+  }
+  
+  std::cout << "Configuration:" << std::endl;
+  std::cout << "- Implementation: " << (use_single_threaded ? "Single-threaded" : "Multi-threaded") << std::endl;
+  if (!use_single_threaded) {
+    std::cout << "- Number of runners: " << num_runners << std::endl;
+  }
+  std::cout << "- Model: " << model_name << std::endl;
+  std::cout << "- Image: " << image_path << std::endl;
+  std::cout << "- Iterations: " << num_iterations << std::endl;
+  
+  // Read input image
+  Mat img = imread(image_path, cv::IMREAD_COLOR);
+  if (img.empty()) {
+    std::cerr << "Error: Could not read image: " << image_path << std::endl;
+    return 1;
+  }
+  
+  try {
+    // Create SuperPoint instance with appropriate implementation
+    auto impl_type = use_single_threaded ? 
+                    vitis::ai::SuperPoint::ImplType::SINGLE_THREADED : 
+                    vitis::ai::SuperPoint::ImplType::MULTI_THREADED;
+    
+    auto superpoint = vitis::ai::SuperPoint::create(model_name, impl_type, num_runners);
+    if (!superpoint) {
+       std::cerr << "Error: Failed to create SuperPoint instance" << std::endl;
+       return 1;
     }
 
+    // Prepare input images
     vector<Mat> imgs;
-
-    cout << "input batch: " << superpoint->get_input_batch() << endl;
-    for(size_t i = 0; i < superpoint->get_input_batch(); ++i)
+    for (size_t i = 0; i < superpoint->get_input_batch(); ++i) {
       imgs.push_back(img);
+    }
     
+    // Run inference
     auto start = chrono::high_resolution_clock::now();
     auto result = superpoint->run(imgs);
-    for(int i = 1; i < nIter; ++i){
+    for (int i = 1; i < num_iterations; ++i) {
       result = superpoint->run(imgs);
     }
     auto end = chrono::high_resolution_clock::now();
 
+    // Report timing and throughput
     auto duration = chrono::duration_cast<chrono::milliseconds>((end - start));
-    for(size_t i = 0; i < superpoint->get_input_batch(); ++i) {
-      LOG(INFO) << "res scales: " << result[i].scale_h << " " << result[i].scale_w;
-      for(size_t k = 0; k < result[i].keypoints.size(); ++k)
-        circle(imgs[i], Point(result[i].keypoints[k].first*result[i].scale_w,
-               result[i].keypoints[k].second*result[i].scale_h), 1, Scalar(0, 0, 255), -1);
-      imwrite(string("result_superpoint_")+to_string(i)+".jpg", imgs[i]);
-      //imshow(std::string("result ") + std::to_string(c), result[c]);
-      //waitKey(0);
+    int total_images = superpoint->get_input_batch() * num_iterations;
+    float throughput = 1000.0f * total_images / duration.count(); // images per second
+    
+    std::cout << "Processed " << total_images << " images in " 
+              << duration.count() << " ms" << std::endl;
+    std::cout << "Average time per batch: " << duration.count() / num_iterations << " ms" << std::endl;
+    std::cout << "Average time per image: " << duration.count() / total_images << " ms" << std::endl;
+    std::cout << "Throughput: " << throughput << " images/second" << std::endl;
+    
+    // Draw and save results (only for the last result to avoid too many output images)
+    for (size_t i = 0; i < superpoint->get_input_batch(); ++i) {
+      std::cout << "Image " << i << " has " << result[i].keypoints.size() << " keypoints" << std::endl;
+      Mat result_img = imgs[i].clone();
+      
+      // Draw keypoints
+      for (size_t k = 0; k < result[i].keypoints.size(); ++k) {
+        circle(result_img, 
+               Point(result[i].keypoints[k].first * result[i].scale_w,
+                     result[i].keypoints[k].second * result[i].scale_h), 
+               2, Scalar(0, 0, 255), -1);
+      }
+      
+      std::string output_filename = "result_superpoint_" + 
+                                    std::string(use_single_threaded ? "single_" : "multi_") + 
+                                    std::to_string(i) + ".jpg";
+      imwrite(output_filename, result_img);
+      std::cout << "Saved result to " << output_filename << std::endl;
     }
 
-    std::cout << "Time: " << duration.count()/nIter << " ms" << endl;
+  } catch (const std::exception& e) {
+    std::cerr << "Error: " << e.what() << std::endl;
+    return 1;
   }
 
-  
-  LOG(INFO) << "BYEBYE";
+  std::cout << "Done!" << std::endl;
   return 0;
 }
