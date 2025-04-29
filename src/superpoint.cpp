@@ -51,7 +51,7 @@
 
 DEF_ENV_PARAM(DEBUG_SUPERPOINT, "0");
 DEF_ENV_PARAM(DUMP_SUPERPOINT, "0");
-DEF_ENV_PARAM(DEBUG_THREADS, "1");
+DEF_ENV_PARAM(DEBUG_THREADS, "0");
 
 using namespace std;
 using namespace cv;
@@ -916,6 +916,7 @@ std::vector<SuperPointResult>  SuperPointMultiImp::run(const std::vector<cv::Mat
   size_t count = 0;
   while (count < img_count) {
     result_queue.dequeue(result);
+    std::cout << "Result index: " << result.index << std::endl;
     results.push_back(result);
     count++;
   }

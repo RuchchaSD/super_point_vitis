@@ -122,9 +122,10 @@ int main(int argc, char* argv[]) {
       imgs.push_back(img);
     }
     
+    std::cout << "warm up the model..." << std::endl;
     //warm up the model
     auto result = superpoint->run(imgs);
-
+    std::cout << "starting inference..." << std::endl;
     // Run inference
     auto start = chrono::high_resolution_clock::now();
     
