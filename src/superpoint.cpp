@@ -738,10 +738,10 @@ DpuInferenceTask SuperPointMultiImp::pre_process(const PreProcessTask& input_ima
     for (int j = 0; j < gray_img.rows * gray_img.cols; ++j) {
       task.input_data[j] = static_cast<int8_t>((gray_img.data[j] - mean) * total_scale);
     }
-    __TOC__(SET_IMG)
-    __TOC__(PREPROCESS)
-    // Enqueue task
-    return task;
+  __TOC__(SET_IMG)
+  __TOC__(PREPROCESS)
+  // Enqueue task
+  return task;
 }
 // DPU inference thread function
  DpuInferenceResult SuperPointMultiImp::dpu_inference(const DpuInferenceTask& task, size_t runnerIdx) {
@@ -928,123 +928,198 @@ std::vector<SuperPointResult>  SuperPointMultiImp::run(const std::vector<cv::Mat
   return results;
 }
 
-void SuperPointMultiImp::run(ThreadSafeQueue<cv::Mat>& imageQueue, ThreadSafeQueue<SuperPointResult>& result_queue, const bool& stop) {
-  // Create ThreadPools for preprocessing and postprocessing
-  ThreadPool preproc_pool(num_threads_);
-  ThreadPool postproc_pool(num_threads_);
-  ThreadPool dpu_pool(NUM_DPU_RUNNERS);
-  
-  std::vector<std::future<DpuInferenceTask>> preproc_futures;
-  std::vector<std::future<std::pair<DpuInferenceResult,size_t>>> dpu_futures;
-  std::vector<std::future<SuperPointResult>> postproc_futures;
+  void SuperPointMultiImp::run(ThreadSafeQueue<cv::Mat>& imageQueue, ThreadSafeQueue<SuperPointResult>& result_queue, const bool& stop) {
+    // Create ThreadPools for preprocessing and postprocessing
+    ThreadPool preproc_pool(num_threads_);
+    ThreadPool postproc_pool(num_threads_);
+    ThreadPool dpu_pool(NUM_DPU_RUNNERS);
+    
+    std::vector<std::future<DpuInferenceTask>> preproc_futures;
+    std::vector<std::future<std::pair<DpuInferenceResult,size_t>>> dpu_futures;
+    std::vector<std::future<SuperPointResult>> postproc_futures;
 
-  // Keep track of available DPU runners
-  std::queue<size_t> available_runners;
-  for (size_t i = 0; i < runners_.size(); ++i) {
-    available_runners.push(i);
-  }
-  
-  int img_idx = 0; // Number of images processed
-  int running_count = 0; // Number of tasks currently running
-  while (!stop || running_count > 0 || !imageQueue.empty()) {
-    // Process new images if runners are available
-    cv::Mat img;
-    if (!imageQueue.empty() && running_count < NUM_DPU_RUNNERS + 2) {
-      while( !imageQueue.empty() && running_count < NUM_DPU_RUNNERS + 2){
-        imageQueue.dequeue(img);
-        img_idx++;
-        preproc_futures.push_back(
-          preproc_pool.enqueue([this, img, img_idx]() {
-            PreProcessTask task;
-            task.index = img_idx;
-            task.image = img;
-            return this->pre_process(task);
-          })
-        );
-        LOG_IF(INFO, ENV_PARAM(DEBUG_THREADS)) << "Enqueued image for preprocessing: " << img_idx;        
-        running_count++;
-      }
+    // Keep track of available DPU runners
+    std::queue<size_t> available_runners;
+    for (size_t i = 0; i < runners_.size(); ++i) {
+      available_runners.push(i);
     }
-
-    // Process completed preprocessing tasks
-    auto preproc_it = preproc_futures.begin();
-    while (preproc_it != preproc_futures.end()) {
-      if (preproc_it->wait_for(std::chrono::milliseconds(1)) == std::future_status::ready) {
-        auto task = preproc_it->get();
-        
-        // Only enqueue for DPU processing if runners are available
-        if (!available_runners.empty()) {
-          size_t runner_idx = available_runners.front();
-          available_runners.pop();
-          
-          dpu_futures.push_back(
-            dpu_pool.enqueue([this, task, runner_idx]() {
-              auto result = this->dpu_inference(task, runner_idx);
-              return std::make_pair(result, runner_idx);
+    
+    int img_idx = 0; // Number of images processed
+    int running_count = 0; // Number of tasks currently running
+    
+    // Store preprocessed tasks waiting for DPU runners
+    std::queue<DpuInferenceTask> preprocessed_tasks;
+    
+    while (!stop || running_count > 0 || !imageQueue.empty()) {
+      // Process new images if runners are available
+      cv::Mat img;
+      if (!imageQueue.empty() && running_count < NUM_DPU_RUNNERS + 2) {
+        while( !imageQueue.empty() && running_count < NUM_DPU_RUNNERS + 2){
+          if (!imageQueue.dequeue(img)) break;
+          img_idx++;
+          preproc_futures.push_back(
+            preproc_pool.enqueue([this, img, img_idx]() {
+              PreProcessTask task;
+              task.index = img_idx;
+              task.image = img;
+              return this->pre_process(task);
             })
           );
-          LOG_IF(INFO, ENV_PARAM(DEBUG_THREADS)) << "Enqueued image for DPU inference: " << task.index;
-          // Remove the processed future
-          preproc_it = preproc_futures.erase(preproc_it);
-        } else {
-          // No runners available, try again later
-          ++preproc_it;
+          LOG_IF(INFO, ENV_PARAM(DEBUG_THREADS)) << "Enqueued image for preprocessing: " << img_idx;        
+          running_count++;
         }
-      } else {
-        ++preproc_it;
       }
-    }
 
-    // Process completed DPU inference tasks
-    auto dpu_it = dpu_futures.begin();
-    while (dpu_it != dpu_futures.end()) {
-      if (dpu_it->wait_for(std::chrono::milliseconds(1)) == std::future_status::ready) {
-        auto pair_result = dpu_it->get();
-        auto result = pair_result.first;
-        auto runner_idx = pair_result.second;
+      // First, check if we have any preprocessed tasks waiting that can now be processed
+      while (!preprocessed_tasks.empty() && !available_runners.empty()) {
+        auto task = preprocessed_tasks.front();
+        preprocessed_tasks.pop();
         
-        // Return the runner to the available pool
-        available_runners.push(runner_idx);
+        size_t runner_idx = available_runners.front();
+        available_runners.pop();
         
-        postproc_futures.push_back(
-          postproc_pool.enqueue([this, result]() {
-            return this->post_process(result);
+        dpu_futures.push_back(
+          dpu_pool.enqueue([this, task, runner_idx]() {
+            auto result = this->dpu_inference(task, runner_idx);
+            return std::make_pair(result, runner_idx);
           })
         );
-        LOG_IF(INFO, ENV_PARAM(DEBUG_THREADS)) << "Enqueued image for postprocessing: " << result.index;
-        
-        // Remove the processed future
-        dpu_it = dpu_futures.erase(dpu_it);
-      } else {
-        ++dpu_it;
+        LOG_IF(INFO, ENV_PARAM(DEBUG_THREADS)) << "Enqueued image for DPU inference: " << task.index;
       }
-    }
 
-    // Process completed post-processing tasks
-    auto postproc_it = postproc_futures.begin();
-    while (postproc_it != postproc_futures.end()) {
-      if (postproc_it->wait_for(std::chrono::milliseconds(1)) == std::future_status::ready) {
-        auto result = postproc_it->get();
-        result_queue.enqueue(result);
-        
-        LOG_IF(INFO, ENV_PARAM(DEBUG_THREADS)) << "Enqueued result for output: " << result.index;
-        // Remove the processed future and decrement the running count
-        postproc_it = postproc_futures.erase(postproc_it);
-        running_count--;
-      } else {
-        ++postproc_it;
+      // Process completed preprocessing tasks
+      auto preproc_it = preproc_futures.begin();
+      while (preproc_it != preproc_futures.end()) {
+        // Only check if the future is ready without blocking
+        if (preproc_it->wait_for(std::chrono::milliseconds(1)) == std::future_status::ready) {
+          // Get the task from the future - this consumes the future state
+          auto task = preproc_it->get();
+          
+          // Either send directly to DPU processing or store for later
+          if (!available_runners.empty()) {
+            size_t runner_idx = available_runners.front();
+            available_runners.pop();
+            
+            dpu_futures.push_back(
+              dpu_pool.enqueue([this, task, runner_idx]() {
+                auto result = this->dpu_inference(task, runner_idx);
+                return std::make_pair(result, runner_idx);
+              })
+            );
+            LOG_IF(INFO, ENV_PARAM(DEBUG_THREADS)) << "Enqueued image for DPU inference: " << task.index;
+          } else {
+            // No runners available, queue for later
+            preprocessed_tasks.push(task);
+          }
+          
+          // Remove the processed future
+          preproc_it = preproc_futures.erase(preproc_it);
+          continue;  // Skip the increment since we already moved to the next item
+        } else {
+          ++preproc_it;
+        }
+      }
+
+      // Process completed DPU inference tasks
+      auto dpu_it = dpu_futures.begin();
+      while (dpu_it != dpu_futures.end()) {
+        if (dpu_it->wait_for(std::chrono::milliseconds(1)) == std::future_status::ready) {
+          try {
+            auto pair_result = dpu_it->get();
+            auto result = pair_result.first;
+            auto runner_idx = pair_result.second;
+            
+            // Return the runner to the available pool
+            available_runners.push(runner_idx);
+            
+            postproc_futures.push_back(
+              postproc_pool.enqueue([this, result]() {
+                return this->post_process(result);
+              })
+            );
+            LOG_IF(INFO, ENV_PARAM(DEBUG_THREADS)) << "Enqueued image for postprocessing: " << result.index;
+          } catch (const std::exception& e) {
+            LOG(ERROR) << "Exception in DPU inference: " << e.what();
+          }
+          
+          // Remove the processed future
+          dpu_it = dpu_futures.erase(dpu_it);
+          continue;  // Skip the increment
+        } else {
+          ++dpu_it;
+        }
+      }
+
+      // Process completed postprocessing tasks
+      auto postproc_it = postproc_futures.begin();
+      while (postproc_it != postproc_futures.end()) {
+        if (postproc_it->wait_for(std::chrono::milliseconds(1)) == std::future_status::ready) {
+          try {
+            auto result = postproc_it->get();
+            // Queue the result
+            result_queue.enqueue(result);
+            running_count--;
+            LOG_IF(INFO, ENV_PARAM(DEBUG_THREADS)) << "Enqueued result for output: " << result.index;
+          } catch (const std::exception& e) {
+            LOG(ERROR) << "Exception in postprocessing: " << e.what();
+            running_count--;
+          }
+          
+          // Remove the processed future
+          postproc_it = postproc_futures.erase(postproc_it);
+          continue;  // Skip the increment
+        } else {
+          ++postproc_it;
+        }
+      }
+      
+      // Add a small sleep to prevent busy waiting if no tasks are available
+      if (preproc_futures.empty() && dpu_futures.empty() && postproc_futures.empty() && imageQueue.empty() && !stop) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
       }
     }
     
-    // Add a small sleep to prevent busy waiting when nothing is ready
-    if (preproc_futures.empty() && dpu_futures.empty() && postproc_futures.empty() && !stop) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    if(!preproc_futures.empty() || !dpu_futures.empty() || !postproc_futures.empty() || !imageQueue.empty() || preprocessed_tasks.size() >0){
+       LOG_IF(INFO, ENV_PARAM(DEBUG_THREADS)) << "Some tasks are still running or waiting.";
     }
+
+
+    /*// Wait for all remaining futures to complete
+    for (auto& f : preproc_futures) {
+      if (f.valid()) {
+        try {
+          auto task = f.get();
+          SuperPointResult dummy;
+          dummy.index = task.index;
+          result_queue.enqueue(dummy);
+        } catch (const std::exception& e) {
+          LOG(ERROR) << "Error waiting for preprocessing tasks: " << e.what();
+        }
+      }
+    }
+    
+    for (auto& f : dpu_futures) {
+      if (f.valid()) {
+        try {
+          f.wait();
+        } catch (const std::exception& e) {
+          LOG(ERROR) << "Error waiting for DPU tasks: " << e.what();
+        }
+      }
+    }
+    
+    for (auto& f : postproc_futures) {
+      if (f.valid()) {
+        try {
+          auto result = f.get();
+          result_queue.enqueue(result);
+        } catch (const std::exception& e) {
+          LOG(ERROR) << "Error waiting for postprocessing tasks: " << e.what();
+        }
+      }
+    }
+    */
   }
-  
-  // Signal the result queue that processing is complete
-  // result_queue.shutdown();
-}
 
 }  // namespace ai
 }  // namespace vitis
