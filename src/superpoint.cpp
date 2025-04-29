@@ -133,8 +133,8 @@ struct DpuInferenceResult {
 
 // Common utility functions for both implementations
 inline void L2_normalization(const int8_t* input, float scale, int channel, int group, float* output) {
-#ifdef ENABLE_NEON
-  // NEON vectorized L2 normalization (from optimized implementation)
+#ifdef __ARM_NEON
+  // NEON vectorized L2 normalization with fixed indices
   const size_t blk = 32;
   for (size_t g = 0; g < group; ++g) {
     const int8_t* src = input + g * channel;
@@ -158,10 +158,9 @@ inline void L2_normalization(const int8_t* input, float scale, int channel, int 
       sumv = vmlaq_f32(sumv, vcvtq_f32_s32(vmovl_s16(vget_high_s16(s3))), vcvtq_f32_s32(vmovl_s16(vget_high_s16(s3))));
     }
     
-    float sum = 0.0f;
-    for (int i = 0; i < 4; i++) {
-      sum += vgetq_lane_f32(sumv, i);
-    }
+    // Extract the sum using fixed lane indices
+    float sum = vgetq_lane_f32(sumv, 0) + vgetq_lane_f32(sumv, 1) + 
+                vgetq_lane_f32(sumv, 2) + vgetq_lane_f32(sumv, 3);
     
     float norm = 1.f / std::sqrt(sum) * scale;
     float32x4_t nrm = vdupq_n_f32(norm);
