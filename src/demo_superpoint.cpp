@@ -19,7 +19,7 @@
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
-#include "./superpoint.hpp"
+#include "SuperPoint.hpp"  // Fixed include from ./superpoint.hpp to SuperPoint.hpp
 
 using namespace std;
 using namespace cv;

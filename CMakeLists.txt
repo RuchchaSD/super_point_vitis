@@ -35,21 +35,16 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(include)
 
 set(MODEL
-    src/superpoint.cpp 
+    src/SuperPoint.cpp
+    src/SuperPointMultiImp.cpp 
+    src/SuperPointSingleImp.cpp
 )
 
-add_executable(demo
+add_library(SuperPointLib SHARED
     ${MODEL}
-    src/demo_superpoint.cpp
 )
 
-# add_executable(test_performance
-#     ${MODEL}
-#     src/test_performance_superpoint.cpp
-# )
-
-# Link libraries for the demo executable
-target_link_libraries(demo
+target_link_libraries(SuperPointLib
     ${OpenCV_LIBS}
     vart::runner
     vart::util
@@ -61,15 +56,9 @@ target_link_libraries(demo
     vitis_ai_library::math
 )
 
-# Link libraries for the test_performance executable
-# target_link_libraries(test_performance
-#     ${OpenCV_LIBS}
-#     vart::runner
-#     vart::util
-#     xir::xir
-#     unilog::unilog
-#     glog::glog
-#     Threads::Threads
-#     vitis_ai_library::dpu_task
-#     vitis_ai_library::math
-# )
+add_executable(demo
+    src/demo_superpoint.cpp
+)
+
+# Link libraries for the demo executable
+target_link_libraries(demo SuperPointLib)
