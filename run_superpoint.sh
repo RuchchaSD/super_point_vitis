@@ -10,8 +10,8 @@ source /etc/profile.d/pynq_venv.sh
 # Default values (can be changed below or passed as environment variables)
 IMPLEMENTATION=${IMPLEMENTATION:-"multi"}  # "single" or "multi"
 RUNNERS=${RUNNERS:-10}                      # Number of DPU runners (only used with multi-threaded)
-ITERATIONS=${ITERATIONS:-1000}                # Number of inference iterations to run
-MODEL=${MODEL:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/superpoint_tf.xmodel"}     # Model file name
+ITERATIONS=${ITERATIONS:-10}                # Number of inference iterations to run
+MODEL=${MODEL:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/compiled_SP_by_H.xmodel"}     # Model file name
 IMAGE=${IMAGE:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/temp/imgs/1403636669163555584.png"}                 # Input image file name
 OUTPUT_DIR=${OUTPUT_DIR:-"./results"}      # Directory to store results
 
