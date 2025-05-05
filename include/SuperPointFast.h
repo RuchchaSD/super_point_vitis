@@ -1,4 +1,4 @@
-// SuperPointMultiImp.h
+// SuperPointFast.h
 #pragma once
 // #include "SuperPoint.hpp"
 
@@ -266,6 +266,51 @@ namespace vitis {
         
 
 
+          inline void nms_mask(vector<vector<int>>& grid, int x, int y, int dist_thresh) {
+            int h = grid.size();
+            int w = grid[0].size();
+            for (int i = max(0, x - dist_thresh); i < min(h, x + dist_thresh + 1); ++i) {
+              for (int j = max(0, y - dist_thresh); j < min(w, y + dist_thresh + 1); ++j) {
+                grid[i][j] = -1;
+              }
+            }
+            grid[x][y] = 1;
+          }
+          
+          inline void nms_old(const vector<int>& xs, const vector<int>& ys, const vector<float>& ptscore,
+                        vector<size_t>& keep_inds, const int inputW, const int inputH) {
+            vector<vector<int>> grid(inputW, vector<int>(inputH, 0));
+            vector<pair<float, size_t>> order;
+            int dist_thresh = 2;
+            for (size_t i = 0; i < ptscore.size(); ++i) {
+              order.push_back({ptscore[i], i});
+            }
+            std::stable_sort(order.begin(), order.end(),
+                             [](const pair<float, size_t>& ls, const pair<float, size_t>& rs) {
+                               return ls.first > rs.first;
+                             });
+            vector<size_t> ordered;
+            transform(order.begin(), order.end(), back_inserter(ordered),
+                      [](auto& km) { return km.second; });
+          
+            for (size_t _i = 0; _i < ordered.size(); ++_i) {
+              size_t i = ordered[_i];
+              int x = xs[i];
+              int y = ys[i];
+              if (grid[x][y] == 0 && x >= dist_thresh && x < inputW - dist_thresh && y >= dist_thresh &&
+                  y < inputH - dist_thresh) {
+                keep_inds.push_back(i);
+                nms_mask(grid, x, y, dist_thresh);
+              }
+            }
+          }
+
+
+
+
+
+
+
         // Thread-safe queue implementation
         template <typename T>
         class ThreadSafeQueue {
@@ -326,12 +371,12 @@ namespace vitis {
 
 
         // Multi-threaded implementation
-        class SuperPointMultiImp {
+        class SuperPointFast {
             public:
-            SuperPointMultiImp(const std::string& model_name, int num_threads);
+            SuperPointFast(const std::string& model_name, int num_threads);
         
             public:
-            virtual ~SuperPointMultiImp();
+            virtual ~SuperPointFast();
             virtual std::vector<SuperPointResult> run(const std::vector<cv::Mat>& imgs);
             virtual size_t get_input_batch() ;
             virtual int getInputWidth() const ;

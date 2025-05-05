@@ -19,9 +19,7 @@
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
-// #include "SuperPoint.hpp"
-// #include "SuperPointSingleImp.h"
-#include "SuperPointMultiImp.h"
+#include "SuperPointFast.h"
 
 using namespace std;
 using namespace cv;
@@ -29,7 +27,6 @@ using namespace cv;
 void print_usage(char* prog_name) {
   std::cout << "Usage: " << prog_name << " [options] model_name image" << std::endl;
   std::cout << "Options:" << std::endl;
-  std::cout << "  -s            Use single-threaded implementation (default: multi-threaded)" << std::endl;
   std::cout << "  -t <num>      Number of preprocessing/postprocessing threads to use (default: 2)" << std::endl;
   std::cout << "                Note: DPU runners fixed at 4" << std::endl;
   std::cout << "  -i <num>      Number of iterations (default: 10)" << std::endl;
@@ -39,7 +36,6 @@ void print_usage(char* prog_name) {
 
 int main(int argc, char* argv[]) {
   // Default parameters
-  bool use_single_threaded = false;
   int num_threads = 2;  // Now controls pre/post-processing threads (DPU runners fixed at 4) 
   int num_iterations = 10;  // Default changed to 10 for throughput calculation
   std::string model_name;
@@ -49,10 +45,7 @@ int main(int argc, char* argv[]) {
   int arg_index = 1;
   while (arg_index < argc) {
     std::string arg = argv[arg_index];
-    if (arg == "-s") {
-      use_single_threaded = true;
-      arg_index++;
-    } else if (arg == "-t") {
+    if (arg == "-t") {
       if (arg_index + 1 < argc) {
         num_threads = std::stoi(argv[arg_index + 1]);
         arg_index += 2;
@@ -90,11 +83,9 @@ int main(int argc, char* argv[]) {
   }
   
   std::cout << "Configuration:" << std::endl;
-  std::cout << "- Implementation: " << (use_single_threaded ? "Single-threaded" : "Multi-threaded") << std::endl;
-  if (!use_single_threaded) {
-    std::cout << "- Number of pre/post-processing threads: " << num_threads << std::endl;
-    std::cout << "- Number of DPU runners: 4 (fixed)" << std::endl;
-  }
+
+  std::cout << "- Number of pre/post-processing threads: " << num_threads << std::endl;
+  std::cout << "- Number of DPU runners: 4 (fixed)" << std::endl;
   std::cout << "- Model: " << model_name << std::endl;
   std::cout << "- Image: " << image_path << std::endl;
   std::cout << "- Iterations: " << num_iterations << std::endl;
@@ -106,34 +97,17 @@ int main(int argc, char* argv[]) {
     return 1;
   }
   
-  try {
-    // Create SuperPoint instance with appropriate implementation
-    // auto impl_type = use_single_threaded ? 
-    //                 vitis::ai::SuperPoint::ImplType::SINGLE_THREADED : 
-    //                 vitis::ai::SuperPoint::ImplType::MULTI_THREADED;
-    
-    // auto superpoint = vitis::ai::SuperPoint::create(model_name, impl_type, num_threads);
-    auto superpoint = vitis::ai::SuperPointMultiImp(model_name, num_threads);
-    // if (!superpoint) {
-    //    std::cerr << "Error: Failed to create SuperPoint instance" << std::endl;
-    //    return 1;
-    // }
+  try {    
+    auto superpoint = vitis::ai::SuperPointFast(model_name, num_threads);
 
         // Prepare input images
-        vector<Mat> imgs;
-        // for (size_t i = 0; i < superpoint->get_input_batch(); ++i) {
-        //   imgs.push_back(img);
-        // }
-        
-        // //warm up the model
-        // auto result = superpoint->run(imgs);
-    
-        // Run inference
-        auto start = chrono::high_resolution_clock::now();
+        vector<Mat> imgs;    
         
         for(int i = 1; i < num_iterations; ++i) {
-            imgs.push_back(img);
+          imgs.push_back(img);
         }
+        // Run inference
+    auto start = chrono::high_resolution_clock::now();
         auto result = superpoint.run(imgs);
     auto end = chrono::high_resolution_clock::now();
 
@@ -161,8 +135,7 @@ int main(int argc, char* argv[]) {
                2, Scalar(0, 0, 255), -1);
       }
       
-      std::string output_filename = "result_superpoint_" + 
-                                    std::string(use_single_threaded ? "single_" : "multi_") + 
+      std::string output_filename = "result_superpoint_multi_" + 
                                     std::to_string(i) + ".jpg";
       imwrite(output_filename, result_img);
       std::cout << "Saved result to " << output_filename << std::endl;

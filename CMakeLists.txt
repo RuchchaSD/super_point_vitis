@@ -37,7 +37,7 @@ include_directories(include)
 set(MODEL
     # src/SuperPoint.cpp 
     # src/SuperPointSingleImp.cpp
-    src/SuperPointMultiImp.cpp
+    src/SuperPointFast.cpp
 )
 
 # Add the source files to the library

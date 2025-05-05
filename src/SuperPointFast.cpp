@@ -1,11 +1,12 @@
-//SuperPointMultiImp.cpp
-#include "SuperPointMultiImp.h"
+//SuperPointFast.cpp
+#include "SuperPointFast.h"
+#include <iomanip>
 
 
 namespace vitis {
     namespace ai {
         // Multi-threaded implementation
-        SuperPointMultiImp::SuperPointMultiImp(const std::string& model_name, int num_threads)
+        SuperPointFast::SuperPointFast(const std::string& model_name, int num_threads)
         {
         // Always create exactly 4 DPU runners regardless of input parameter
         for (int i = 0; i < NUM_DPU_RUNNERS; ++i) {
@@ -23,7 +24,7 @@ namespace vitis {
         outputW = output_tensors[0].width;
         output2H = output_tensors[1].height;
         output2W = output_tensors[1].width;
-        conf_thresh = 0.015;
+        conf_thresh = 0.007;
 
         LOG_IF(INFO, ENV_PARAM(DEBUG_SUPERPOINT)) 
         << "tensor1 info : " << output_tensors[0].height << " " << output_tensors[0].width  << " " << output_tensors[0].channel << endl
@@ -33,18 +34,18 @@ namespace vitis {
         outputSize2 = output_tensors[1].channel * output_tensors[1].height * output_tensors[1].width;
         }
 
-        SuperPointMultiImp::~SuperPointMultiImp() {}
+        SuperPointFast::~SuperPointFast() {}
 
-        size_t SuperPointMultiImp::get_input_batch() { return runners_[0]->get_input_batch(0, 0); }
-        int SuperPointMultiImp::getInputWidth() const {
+        size_t SuperPointFast::get_input_batch() { return runners_[0]->get_input_batch(0, 0); }
+        int SuperPointFast::getInputWidth() const {
         return runners_[0]->getInputTensor(0u)[0].width;
         }
-        int SuperPointMultiImp::getInputHeight() const {
+        int SuperPointFast::getInputHeight() const {
         return runners_[0]->getInputTensor(0u)[0].height;
         }
 
         // Pre-processing thread function
-        void SuperPointMultiImp::pre_process(const std::vector<cv::Mat>& input_images,
+        void SuperPointFast::pre_process(const std::vector<cv::Mat>& input_images,
                                     ThreadSafeQueue<DpuInferenceTask>& task_queue,
                                     int start_idx, int end_idx) {
         __TIC__(PREPROCESS)
@@ -52,7 +53,7 @@ namespace vitis {
         float scale0 = vitis::ai::library::tensor_scale(input_tensors_[0]);
 
         float mean = 0;
-        float total_scale = scale0 * 0.00392157f;  // 1/255.0
+        float total_scale = scale0 * 1/255.0;  // 1/255.0
 
         // Pre-process images in the assigned range
         for (int i = start_idx; i < end_idx; ++i) {
@@ -101,7 +102,7 @@ namespace vitis {
         __TOC__(PREPROCESS)
         }
 
-        void SuperPointMultiImp::dpu_inference(ThreadSafeQueue<DpuInferenceTask>& task_queue,
+        void SuperPointFast::dpu_inference(ThreadSafeQueue<DpuInferenceTask>& task_queue,
                                         ThreadSafeQueue<DpuInferenceResult>& result_queue) {
         __TIC__(DPU_INFERENCE_TOTAL)
         // Create thread pool based on available DPU runners
@@ -179,7 +180,7 @@ namespace vitis {
         __TOC__(DPU_INFERENCE_TOTAL)
         }
 
-        void SuperPointMultiImp::post_process(ThreadSafeQueue<DpuInferenceResult>& result_queue,
+        void SuperPointFast::post_process(ThreadSafeQueue<DpuInferenceResult>& result_queue,
                                         size_t thread_idx, size_t num_threads) {
         __TIC__(POSTPROCESS_TOTAL)
         int processed_count = 0;
@@ -208,7 +209,7 @@ namespace vitis {
         }
 
         // Function to process a single result
-        SuperPointResult SuperPointMultiImp::process_result(const DpuInferenceResult& result) {
+        SuperPointResult SuperPointFast::process_result(const DpuInferenceResult& result) {
         SuperPointResult sp_result;
         sp_result.scale_w = result.scale_w;
         sp_result.scale_h = result.scale_h;
@@ -255,6 +256,7 @@ namespace vitis {
         // Keypoint detection
         __TIC__(SORT)
         vector<float> tmp;
+        // float max = 0, min = 0;
         tmp.reserve(reduced_size);
         vector<int> xs, ys;
         vector<size_t> keep_inds;
@@ -264,10 +266,15 @@ namespace vitis {
         for (size_t n = 0u; n < outputW; ++n) {
             for (size_t j = 0u; j < 8; ++j) {
             tmp.push_back(heatmap.at(i * 8 + j + (m * outputW + n) * 64));  // transpose heatmap
+            // std::cout << "KP Num: "<< i * 8 + j + (m * outputW + n) * 64 << " | reliability: " << tmp.back() << std::endl;
+            // allScores.push_back(tmp.back());
             if (tmp.back() > conf_thresh) {
                 ys.push_back(m * 8 + i);
                 xs.push_back(n * 8 + j);
                 ptscore.push_back(tmp.back());
+                // if (tmp.back() > max) {
+                // max = tmp.back();
+                // }
             }
             }
         }
@@ -275,9 +282,33 @@ namespace vitis {
         }
         __TOC__(SORT)
 
+
+        // const int num_bins = 10;
+        // std::vector<int> histogram(num_bins, 0);
+        // float bin_width = (max - min) / num_bins;
+        // int total = 0;
+
+        // for (size_t i = 0; i < tmp.size(); ++i) {
+        //     if (tmp[i] > min && tmp[i] < max) {
+        //         int bin_index = static_cast<int>((tmp[i] - min) / bin_width);
+        //         if (bin_index >= 0 && bin_index < num_bins) {
+        //             histogram[bin_index]++;
+        //             total++;
+        //         }
+        //     }
+        // }
+        // std::cout << "Keypoint confidence score distribution:" << std::endl;
+        // std::cout << "Total keypoints: " << tmp.size() << ", Valid keypoints: " << ptscore.size() << std::endl;
+        // for (int i = 0; i < num_bins; ++i) {
+        //     float bin_start = min + i * bin_width;
+        //     float bin_end = bin_start + bin_width;
+        //     std::cout << "[" << std::fixed << std::setprecision(3) << bin_start << " - " << bin_end << "): " << histogram[i] << std::endl;
+        // }
+
         // NMS - using our optimized version
         __TIC__(NMS)
-        nms_fast(xs, ys, ptscore, keep_inds, sWidth, sHeight);
+        // nms_fast(xs, ys, ptscore, keep_inds, sWidth, sHeight);
+        nms_old(xs, ys, ptscore, keep_inds, sWidth, sHeight);
         __TOC__(NMS)
 
         // L2 Normalization - using our optimized version
@@ -303,7 +334,7 @@ namespace vitis {
         }
 
         // Run function with proper promise handling
-        std::vector<SuperPointResult> SuperPointMultiImp::run(const std::vector<cv::Mat>& imgs) {
+        std::vector<SuperPointResult> SuperPointFast::run(const std::vector<cv::Mat>& imgs) {
 
         // Create thread-safe queues for the pipeline
         auto task_queue = std::make_shared<ThreadSafeQueue<DpuInferenceTask>>();
