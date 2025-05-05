@@ -335,67 +335,66 @@ namespace vitis {
 
         // Run function with proper promise handling
         std::vector<SuperPointResult> SuperPointFast::run(const std::vector<cv::Mat>& imgs) {
+            // Create thread-safe queues for the pipeline
+            auto task_queue = std::make_shared<ThreadSafeQueue<DpuInferenceTask>>();
+            auto result_queue = std::make_shared<ThreadSafeQueue<DpuInferenceResult>>();
 
-        // Create thread-safe queues for the pipeline
-        auto task_queue = std::make_shared<ThreadSafeQueue<DpuInferenceTask>>();
-        auto result_queue = std::make_shared<ThreadSafeQueue<DpuInferenceResult>>();
+            // Resize results vector to match input size
+            results_.resize(imgs.size());
 
-        // Resize results vector to match input size
-        results_.resize(imgs.size());
+            // Create a promise that will be fulfilled when processing is complete
+            auto promise = std::make_shared<std::promise<std::vector<SuperPointResult>>>();
+            auto future = promise->get_future();
 
-        // Create a promise that will be fulfilled when processing is complete
-        auto promise = std::make_shared<std::promise<std::vector<SuperPointResult>>>();
-        auto future = promise->get_future();
+            // Start pre-processing threads (multiple threads based on num_threads_)
+            std::vector<std::thread> preproc_threads;
+            int images_per_thread = imgs.size() / num_threads_;
+            int remaining_images = imgs.size() % num_threads_;
 
-        // Start pre-processing threads (multiple threads based on num_threads_)
-        std::vector<std::thread> preproc_threads;
-        int images_per_thread = imgs.size() / num_threads_;
-        int remaining_images = imgs.size() % num_threads_;
+            int start_idx = 0;
+            for (int i = 0; i < num_threads_; ++i) {
+            int num_images = images_per_thread + (i < remaining_images ? 1 : 0);
+            int end_idx = start_idx + num_images;
 
-        int start_idx = 0;
-        for (int i = 0; i < num_threads_; ++i) {
-        int num_images = images_per_thread + (i < remaining_images ? 1 : 0);
-        int end_idx = start_idx + num_images;
+            if (num_images > 0) {
+            preproc_threads.emplace_back([this, &imgs, task_queue, start_idx, end_idx]() {
+                this->pre_process(imgs, *task_queue, start_idx, end_idx);
+            });
+            start_idx = end_idx;
+            }
+            }
 
-        if (num_images > 0) {
-        preproc_threads.emplace_back([this, &imgs, task_queue, start_idx, end_idx]() {
-            this->pre_process(imgs, *task_queue, start_idx, end_idx);
-        });
-        start_idx = end_idx;
-        }
-        }
+            // Start DPU inference thread (fixed 4 DPU runners internally)
+            std::thread dpu_thread([this, task_queue, result_queue]() {
+            this->dpu_inference(*task_queue, *result_queue);
+            });
 
-        // Start DPU inference thread (fixed 4 DPU runners internally)
-        std::thread dpu_thread([this, task_queue, result_queue]() {
-        this->dpu_inference(*task_queue, *result_queue);
-        });
+            // Start post-processing threads 
+            std::vector<std::thread> postproc_threads;
+            for (int i = 0; i < num_threads_; ++i) {
+            postproc_threads.emplace_back([this, result_queue, i]() {
+            this->post_process(*result_queue, i, num_threads_);
+            });
+            }
 
-        // Start post-processing threads 
-        std::vector<std::thread> postproc_threads;
-        for (int i = 0; i < num_threads_; ++i) {
-        postproc_threads.emplace_back([this, result_queue, i]() {
-        this->post_process(*result_queue, i, num_threads_);
-        });
-        }
+            // Wait for all threads to finish
+            for (size_t i = 0; i < preproc_threads.size(); ++i) {
+            preproc_threads[i].join();
+            }
 
-        // Wait for all threads to finish
-        for (size_t i = 0; i < preproc_threads.size(); ++i) {
-        preproc_threads[i].join();
-        }
+            task_queue->shutdown();
 
-        task_queue->shutdown();
+            dpu_thread.join();
 
-        dpu_thread.join();
+            for (size_t i = 0; i < postproc_threads.size(); ++i) {
+            postproc_threads[i].join();
+            }
 
-        for (size_t i = 0; i < postproc_threads.size(); ++i) {
-        postproc_threads[i].join();
-        }
+            // After all threads have completed, set the promise with the results
+            promise->set_value(results_);
 
-        // After all threads have completed, set the promise with the results
-        promise->set_value(results_);
-
-        auto result = future.get();
-        return result;
+            auto result = future.get();
+            return result;
         }
 
     }
