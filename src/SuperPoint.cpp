@@ -14,7 +14,8 @@ namespace vitis {
       if (impl_type == ImplType::SINGLE_THREADED) {
         return std::unique_ptr<SuperPointSingleImp>(new SuperPointSingleImp(model_name));
       } else {
-        return std::unique_ptr<SuperPointMultiImp>(new SuperPointMultiImp(model_name, num_runners));
+        // return std::unique_ptr<SuperPointMultiImp>(new SuperPointMultiImp(model_name, num_runners));
+        throw std::runtime_error("Multi-threaded implementation not available");
       }
     }
 

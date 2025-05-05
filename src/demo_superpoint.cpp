@@ -19,8 +19,8 @@
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
-#include "SuperPoint.hpp"
-#include "SuperPointSingleImp.h"
+// #include "SuperPoint.hpp"
+// #include "SuperPointSingleImp.h"
 #include "SuperPointMultiImp.h"
 
 using namespace std;
@@ -108,9 +108,9 @@ int main(int argc, char* argv[]) {
   
   try {
     // Create SuperPoint instance with appropriate implementation
-    auto impl_type = use_single_threaded ? 
-                    vitis::ai::SuperPoint::ImplType::SINGLE_THREADED : 
-                    vitis::ai::SuperPoint::ImplType::MULTI_THREADED;
+    // auto impl_type = use_single_threaded ? 
+    //                 vitis::ai::SuperPoint::ImplType::SINGLE_THREADED : 
+    //                 vitis::ai::SuperPoint::ImplType::MULTI_THREADED;
     
     // auto superpoint = vitis::ai::SuperPoint::create(model_name, impl_type, num_threads);
     auto superpoint = vitis::ai::SuperPointMultiImp(model_name, num_threads);

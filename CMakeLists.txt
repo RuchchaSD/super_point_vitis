@@ -35,8 +35,8 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(include)
 
 set(MODEL
-    src/SuperPoint.cpp 
-    src/SuperPointSingleImp.cpp
+    # src/SuperPoint.cpp 
+    # src/SuperPointSingleImp.cpp
     src/SuperPointMultiImp.cpp
 )
 

@@ -6,7 +6,7 @@ namespace vitis {
     namespace ai {
         // Multi-threaded implementation
         SuperPointMultiImp::SuperPointMultiImp(const std::string& model_name, int num_threads)
-        : SuperPoint(model_name), num_threads_(num_threads) {
+        {
         // Always create exactly 4 DPU runners regardless of input parameter
         for (int i = 0; i < NUM_DPU_RUNNERS; ++i) {
         runners_.emplace_back(vitis::ai::DpuTask::create(model_name));
