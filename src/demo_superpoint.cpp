@@ -19,7 +19,9 @@
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
-#include "./superpoint.hpp"
+#include "SuperPoint.hpp"
+#include "SuperPointSingleImp.h"
+#include "SuperPointMultiImp.h"
 
 using namespace std;
 using namespace cv;
@@ -110,20 +112,21 @@ int main(int argc, char* argv[]) {
                     vitis::ai::SuperPoint::ImplType::SINGLE_THREADED : 
                     vitis::ai::SuperPoint::ImplType::MULTI_THREADED;
     
-    auto superpoint = vitis::ai::SuperPoint::create(model_name, impl_type, num_threads);
-    if (!superpoint) {
-       std::cerr << "Error: Failed to create SuperPoint instance" << std::endl;
-       return 1;
-    }
+    // auto superpoint = vitis::ai::SuperPoint::create(model_name, impl_type, num_threads);
+    auto superpoint = vitis::ai::SuperPointMultiImp(model_name, num_threads);
+    // if (!superpoint) {
+    //    std::cerr << "Error: Failed to create SuperPoint instance" << std::endl;
+    //    return 1;
+    // }
 
         // Prepare input images
         vector<Mat> imgs;
-        for (size_t i = 0; i < superpoint->get_input_batch(); ++i) {
-          imgs.push_back(img);
-        }
+        // for (size_t i = 0; i < superpoint->get_input_batch(); ++i) {
+        //   imgs.push_back(img);
+        // }
         
-        //warm up the model
-        auto result = superpoint->run(imgs);
+        // //warm up the model
+        // auto result = superpoint->run(imgs);
     
         // Run inference
         auto start = chrono::high_resolution_clock::now();
@@ -131,12 +134,12 @@ int main(int argc, char* argv[]) {
         for(int i = 1; i < num_iterations; ++i) {
             imgs.push_back(img);
         }
-        result = superpoint->run(imgs);
+        auto result = superpoint.run(imgs);
     auto end = chrono::high_resolution_clock::now();
 
     // Report timing and throughput
     auto duration = chrono::duration_cast<chrono::milliseconds>((end - start));
-    int total_images = superpoint->get_input_batch() * num_iterations;
+    int total_images = superpoint.get_input_batch() * num_iterations;
     float throughput = 1000.0f * total_images / duration.count(); // images per second
     
     std::cout << "Processed " << total_images << " images in " 
@@ -146,7 +149,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Throughput: " << throughput << " images/second" << std::endl;
     
     // Draw and save results (only for the last result to avoid too many output images)
-    for (size_t i = 0; i < superpoint->get_input_batch(); ++i) {
+    for (size_t i = 0; i < superpoint.get_input_batch(); ++i) {
       std::cout << "Image " << i << " has " << result[i].keypoints.size() << " keypoints" << std::endl;
       Mat result_img = imgs[i].clone();
       
