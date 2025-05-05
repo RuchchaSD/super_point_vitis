@@ -40,6 +40,22 @@ set(MODEL
     src/SuperPointFast.cpp
 )
 
+add_library(FeatureIO SHARED
+    src/FeatureIO.cpp
+)
+
+# Link libraries for the FeatureIO library
+target_link_libraries(FeatureIO
+    ${OpenCV_LIBS}
+)
+
+# Specify include directories for the FeatureIO library
+target_include_directories(FeatureIO PUBLIC
+    ${OpenCV_INCLUDE_DIRS}
+    ${PROJECT_SOURCE_DIR}/include
+)
+
+
 # Add the source files to the library
 add_library(SuperPointLib SHARED
     ${MODEL}
@@ -68,6 +84,11 @@ add_executable(demo_continuous
     src/demo_continuous.cpp
 )
 
+# Add the feature extraction executable
+add_executable(extract_features
+    src/extract_features.cpp
+)
+
 # add_executable(test_performance
 #     ${MODEL}
 #     src/test_performance_superpoint.cpp
@@ -81,4 +102,10 @@ target_link_libraries(demo
 # Link libraries for the continuous demo executable
 target_link_libraries(demo_continuous
     SuperPointLib
+)
+
+# Link libraries for the feature extraction executable
+target_link_libraries(extract_features
+    SuperPointLib
+    FeatureIO
 )

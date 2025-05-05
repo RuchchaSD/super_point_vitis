@@ -109,6 +109,53 @@ namespace vitis {
         }
 
 
+        DpuInferenceTask SuperPointFast::pre_process_image(InputQueueItem inputItem) 
+        {
+            float mean = 0;
+            float total_scale = scale0 * 1/255.0;  // 1/255.0
+
+            DpuInferenceTask task;
+            task.index = inputItem.index;
+            task.img = inputItem.image;
+            task.name = inputItem.name;
+
+            auto img = inputItem.image;
+
+    
+            // Resize image if needed
+            cv::Mat resized_img;
+            if (img.rows == sHeight && img.cols == sWidth) {
+                resized_img = img;
+            } else {
+                cv::resize(img, resized_img, cv::Size(sWidth, sHeight));
+            }
+    
+            task.scale_w = img.cols / static_cast<float>(sWidth);
+            task.scale_h = img.rows / static_cast<float>(sHeight);
+    
+            // Convert to grayscale
+            cv::Mat gray_img;
+            if (img.channels() == 3) {
+                cv::cvtColor(resized_img, gray_img, cv::COLOR_BGR2GRAY);
+            } else {
+                gray_img = resized_img;
+            }
+    
+            // Allocate memory for input data
+            task.input_data.resize(sWidth * sHeight);
+    
+            // Optimize conversion to int8_t with scale
+            #ifdef ENABLE_NEON
+            // NEON optimization would go here
+            // But keeping scalar implementation for clarity
+            #endif
+            for (int j = 0; j < gray_img.rows * gray_img.cols; ++j) {
+            task.input_data[j] = static_cast<int8_t>((gray_img.data[j] - mean) * total_scale);
+            }
+    
+            // Enqueue task
+            return task;
+        }
 
 
 
@@ -155,6 +202,7 @@ namespace vitis {
             DpuInferenceResult result;
             result.index = task.index;
             result.img = task.img;
+            result.name = task.name;
             result.scale_w = task.scale_w;
             result.scale_h = task.scale_h;
 
@@ -227,6 +275,7 @@ namespace vitis {
         SuperPointResult sp_result;
         sp_result.index = result.index;
         sp_result.img = result.img;
+        sp_result.name = result.name;
         sp_result.scale_w = result.scale_w;
         sp_result.scale_h = result.scale_h;
 
@@ -451,7 +500,7 @@ namespace vitis {
                             }
 
                             task_queue->enqueue(
-                                pre_process_image(item.image, item.index)
+                                pre_process_image(item)
                             );
                             int now = tasks_in_flight.fetch_add(1) + 1;
                             hold_images.store(now >= 3*num_threads_);                            

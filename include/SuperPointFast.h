@@ -65,11 +65,13 @@ namespace vitis {
         // Data structures for queue-based processing
         struct InputQueueItem {
             size_t index;
+            std::string name;
             cv::Mat image;
         };
 
         struct SuperPointResult {
             size_t index;  // To keep track of the image order
+            std::string name;
             cv::Mat img;
             std::vector<std::pair<float, float>> keypoints;
             std::vector<std::vector<float>> descriptor;
@@ -365,6 +367,7 @@ namespace vitis {
         // Data structures for pipeline stages
         struct DpuInferenceTask {
             size_t index;
+            std::string name;
             cv::Mat img;
             std::vector<int8_t> input_data;
             float scale_w;
@@ -373,6 +376,7 @@ namespace vitis {
 
         struct DpuInferenceResult {
             size_t index;
+            std::string name;
             cv::Mat img;
             std::vector<int8_t> output_data1;
             std::vector<int8_t> output_data2;
@@ -403,12 +407,14 @@ namespace vitis {
                             ThreadSafeQueue<DpuInferenceTask>& task_queue,
                             int start_idx, int end_idx);
             DpuInferenceTask pre_process_image(const cv::Mat& img, int idx);
+            DpuInferenceTask pre_process_image(InputQueueItem inputItem);
             void dpu_inference(ThreadSafeQueue<DpuInferenceTask>& task_queue,
                                 ThreadSafeQueue<DpuInferenceResult>& result_queue);
             void post_process(ThreadSafeQueue<DpuInferenceResult>& result_queue,
                             size_t thread_idx, size_t num_threads);
         
             SuperPointResult process_result(const DpuInferenceResult& result);
+            
         
             private:
             static const int NUM_DPU_RUNNERS = 4;  // Fixed number of DPU runners
