@@ -25,6 +25,8 @@ namespace vitis {
         output2H = output_tensors[1].height;
         output2W = output_tensors[1].width;
         conf_thresh = 0.007;
+        
+        scale0 = vitis::ai::library::tensor_scale(input_tensors_[0]);
 
         LOG_IF(INFO, ENV_PARAM(DEBUG_SUPERPOINT)) 
         << "tensor1 info : " << output_tensors[0].height << " " << output_tensors[0].width  << " " << output_tensors[0].channel << endl
@@ -34,7 +36,9 @@ namespace vitis {
         outputSize2 = output_tensors[1].channel * output_tensors[1].height * output_tensors[1].width;
         }
 
-        SuperPointFast::~SuperPointFast() {}
+        SuperPointFast::~SuperPointFast() {
+            if (pipeline_thread_.joinable()) pipeline_thread_.join();
+        }
 
         size_t SuperPointFast::get_input_batch() { return runners_[0]->get_input_batch(0, 0); }
         int SuperPointFast::getInputWidth() const {
@@ -49,58 +53,67 @@ namespace vitis {
                                     ThreadSafeQueue<DpuInferenceTask>& task_queue,
                                     int start_idx, int end_idx) {
         __TIC__(PREPROCESS)
-        // scale0 is the scale factor for the input tensor
-        float scale0 = vitis::ai::library::tensor_scale(input_tensors_[0]);
-
-        float mean = 0;
-        float total_scale = scale0 * 1/255.0;  // 1/255.0
-
         // Pre-process images in the assigned range
         for (int i = start_idx; i < end_idx; ++i) {
-        const cv::Mat& img = input_images[i];
-        DpuInferenceTask task;
-        task.index = i;
-
-        // Resize image if needed
-        __TIC__(RESIZE)
-        cv::Mat resized_img;
-        if (img.rows == sHeight && img.cols == sWidth) {
-        resized_img = img;
-        } else {
-        cv::resize(img, resized_img, cv::Size(sWidth, sHeight));
-        }
-        __TOC__(RESIZE)
-
-        task.scale_w = img.cols / static_cast<float>(sWidth);
-        task.scale_h = img.rows / static_cast<float>(sHeight);
-
-        // Convert to grayscale
-        __TIC__(SET_IMG)
-        cv::Mat gray_img;
-        if (img.channels() == 3) {
-        cv::cvtColor(resized_img, gray_img, cv::COLOR_BGR2GRAY);
-        } else {
-        gray_img = resized_img;
-        }
-
-        // Allocate memory for input data
-        task.input_data.resize(sWidth * sHeight);
-
-        // Optimize conversion to int8_t with scale
-        #ifdef ENABLE_NEON
-        // NEON optimization would go here
-        // But keeping scalar implementation for clarity
-        #endif
-        for (int j = 0; j < gray_img.rows * gray_img.cols; ++j) {
-        task.input_data[j] = static_cast<int8_t>((gray_img.data[j] - mean) * total_scale);
-        }
-        __TOC__(SET_IMG)
-
-        // Enqueue task
-        task_queue.enqueue(task);
+            // Enqueue task
+            task_queue.enqueue(
+                pre_process_image(input_images[i], i)
+            );
         }
         __TOC__(PREPROCESS)
         }
+
+
+        DpuInferenceTask SuperPointFast::pre_process_image(const cv::Mat& img, int idx) 
+        {
+            float mean = 0;
+            float total_scale = scale0 * 1/255.0;  // 1/255.0
+
+            DpuInferenceTask task;
+            task.index = idx;
+            task.img = img;
+    
+            // Resize image if needed
+            cv::Mat resized_img;
+            if (img.rows == sHeight && img.cols == sWidth) {
+                resized_img = img;
+            } else {
+                cv::resize(img, resized_img, cv::Size(sWidth, sHeight));
+            }
+    
+            task.scale_w = img.cols / static_cast<float>(sWidth);
+            task.scale_h = img.rows / static_cast<float>(sHeight);
+    
+            // Convert to grayscale
+            cv::Mat gray_img;
+            if (img.channels() == 3) {
+                cv::cvtColor(resized_img, gray_img, cv::COLOR_BGR2GRAY);
+            } else {
+                gray_img = resized_img;
+            }
+    
+            // Allocate memory for input data
+            task.input_data.resize(sWidth * sHeight);
+    
+            // Optimize conversion to int8_t with scale
+            #ifdef ENABLE_NEON
+            // NEON optimization would go here
+            // But keeping scalar implementation for clarity
+            #endif
+            for (int j = 0; j < gray_img.rows * gray_img.cols; ++j) {
+            task.input_data[j] = static_cast<int8_t>((gray_img.data[j] - mean) * total_scale);
+            }
+    
+            // Enqueue task
+            return task;
+        }
+
+
+
+
+
+
+
 
         void SuperPointFast::dpu_inference(ThreadSafeQueue<DpuInferenceTask>& task_queue,
                                         ThreadSafeQueue<DpuInferenceResult>& result_queue) {
@@ -141,6 +154,7 @@ namespace vitis {
             // Prepare result
             DpuInferenceResult result;
             result.index = task.index;
+            result.img = task.img;
             result.scale_w = task.scale_w;
             result.scale_h = task.scale_h;
 
@@ -211,6 +225,8 @@ namespace vitis {
         // Function to process a single result
         SuperPointResult SuperPointFast::process_result(const DpuInferenceResult& result) {
         SuperPointResult sp_result;
+        sp_result.index = result.index;
+        sp_result.img = result.img;
         sp_result.scale_w = result.scale_w;
         sp_result.scale_h = result.scale_h;
 
@@ -333,6 +349,8 @@ namespace vitis {
         return sp_result;
         }
 
+
+
         // Run function with proper promise handling
         std::vector<SuperPointResult> SuperPointFast::run(const std::vector<cv::Mat>& imgs) {
             // Create thread-safe queues for the pipeline
@@ -397,5 +415,92 @@ namespace vitis {
             return result;
         }
 
+
+        // Overloaded run function for continuous processing with queues
+        void SuperPointFast::run( ThreadSafeQueue<InputQueueItem>& input_queue, ThreadSafeQueue<SuperPointResult>& output_queue,std::atomic<bool>& hold_images) 
+        {
+            // If a previous run() is still alive, wait for it.
+            if (pipeline_thread_.joinable()) pipeline_thread_.join();
+
+            // Launch the pipeline in its own thread so the caller regains control.
+            pipeline_thread_ = std::thread([this, &input_queue, &output_queue, &hold_images]()
+            {
+                // ───────────────  Stage-local queues  ───────────────
+                auto task_queue   = std::make_shared<ThreadSafeQueue<DpuInferenceTask>>();
+                auto result_queue = std::make_shared<ThreadSafeQueue<DpuInferenceResult>>();
+
+                std::atomic<int> tasks_in_flight{0};
+                // ─────────────── 1.  Pre-processing stage ───────────────
+                std::vector<std::thread> preproc_threads;
+                for (int t = 0; t < num_threads_; ++t) 
+                {
+                    preproc_threads.emplace_back([this, &input_queue, task_queue, &tasks_in_flight, &hold_images]() 
+                    {
+                        while (true) 
+                        {
+                            
+                            InputQueueItem item;
+                            if (!input_queue.dequeue(item))
+                            {         
+                                break;
+                            }
+
+                            if(input_queue.is_shutdown())
+                            {
+                                std::cout << "Input queue is shutdowned, preprocessing thread will exit once all images are preprocessed" << std::endl;
+                            }
+
+                            task_queue->enqueue(
+                                pre_process_image(item.image, item.index)
+                            );
+                            int now = tasks_in_flight.fetch_add(1) + 1;
+                            hold_images.store(now >= 3*num_threads_);                            
+                        }
+                    }
+                    );
+                }
+
+                // ─────────────── 2.  DPU-inference stage ───────────────
+                std::thread dpu_thread([this, task_queue, result_queue, &tasks_in_flight, &hold_images]() 
+                {
+                    // Re-use the existing dpu_inference() helper but under our own lifetime.
+                    this->dpu_inference(*task_queue, *result_queue);
+                });
+
+                // ─────────────── 3.  Post-processing stage ───────────────
+                std::vector<std::thread> postproc_threads;
+                for (int t = 0; t < num_threads_; ++t) {
+                    postproc_threads.emplace_back([this, result_queue, &output_queue,&tasks_in_flight, &hold_images]() {
+                        DpuInferenceResult raw;
+                        while (result_queue->dequeue(raw)) {
+                            SuperPointResult r = this->process_result(raw);
+                            if (!output_queue.is_shutdown()) {
+                                output_queue.enqueue(r);
+                            }else{
+                                throw std::runtime_error("Output queue should not be shutdowned by caller");
+                            }
+
+                            int now = tasks_in_flight.fetch_sub(1) - 1;
+                            hold_images.store(now >= 3*num_threads_);
+                        }
+                    });
+                }
+
+                // ───────────────  Shutdown coordination  ───────────────
+                for (auto& th : preproc_threads)  th.join();
+                task_queue->shutdown();
+                dpu_thread.join();
+                result_queue->shutdown();
+                for (auto& th : postproc_threads) th.join();
+                output_queue.shutdown();
+                
+                // Signal downstream that nothing else will arrive.
+                hold_images.store(false);
+                
+                
+            }
+            );
+
+        }
     }
 }

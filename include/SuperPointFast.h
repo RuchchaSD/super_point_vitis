@@ -62,14 +62,20 @@ static vector<vitis::ai::library::OutputTensor> sort_tensors(
 namespace vitis {
     namespace ai {
 
-    
+        // Data structures for queue-based processing
+        struct InputQueueItem {
+            size_t index;
+            cv::Mat image;
+        };
+
         struct SuperPointResult {
             size_t index;  // To keep track of the image order
+            cv::Mat img;
             std::vector<std::pair<float, float>> keypoints;
             std::vector<std::vector<float>> descriptor;
             float scale_w;
             float scale_h;
-          };
+        };
         
         
         
@@ -349,11 +355,17 @@ namespace vitis {
                 }
                 cond_var_.notify_all();
             }
+
+            bool is_shutdown() const {
+                std::lock_guard<std::mutex> lock(mutex_);
+                return shutdown_;
+            }
         };
 
         // Data structures for pipeline stages
         struct DpuInferenceTask {
             size_t index;
+            cv::Mat img;
             std::vector<int8_t> input_data;
             float scale_w;
             float scale_h;
@@ -361,6 +373,7 @@ namespace vitis {
 
         struct DpuInferenceResult {
             size_t index;
+            cv::Mat img;
             std::vector<int8_t> output_data1;
             std::vector<int8_t> output_data2;
             float scale_w;
@@ -378,6 +391,9 @@ namespace vitis {
             public:
             virtual ~SuperPointFast();
             virtual std::vector<SuperPointResult> run(const std::vector<cv::Mat>& imgs);
+
+            void run(ThreadSafeQueue<InputQueueItem>& input_queue, ThreadSafeQueue<SuperPointResult>& output_queue, std::atomic<bool>& hold_images);
+
             virtual size_t get_input_batch() ;
             virtual int getInputWidth() const ;
             virtual int getInputHeight() const ;
@@ -386,6 +402,7 @@ namespace vitis {
             void pre_process(const std::vector<cv::Mat>& input_images,
                             ThreadSafeQueue<DpuInferenceTask>& task_queue,
                             int start_idx, int end_idx);
+            DpuInferenceTask pre_process_image(const cv::Mat& img, int idx);
             void dpu_inference(ThreadSafeQueue<DpuInferenceTask>& task_queue,
                                 ThreadSafeQueue<DpuInferenceResult>& result_queue);
             void post_process(ThreadSafeQueue<DpuInferenceResult>& result_queue,
@@ -397,6 +414,9 @@ namespace vitis {
             static const int NUM_DPU_RUNNERS = 4;  // Fixed number of DPU runners
             int num_threads_;  // Number of pre/post-processing threads
             std::mutex results_mutex_;  // Mutex for synchronizing results access
+            // SuperPointFast.h  (inside class SuperPointFast, private:)
+            std::thread pipeline_thread_;
+
         
             std::vector<std::unique_ptr<vitis::ai::DpuTask>> runners_;
             std::vector<SuperPointResult> results_;
@@ -406,6 +426,9 @@ namespace vitis {
             int sWidth;
             int sHeight;
             size_t batch_;
+            // scale0 is the scale factor for the input tensor
+            float scale0;
+
         
             size_t channel1;
             size_t channel2;

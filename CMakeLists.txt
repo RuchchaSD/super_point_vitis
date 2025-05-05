@@ -63,6 +63,11 @@ add_executable(demo
     src/demo_superpoint.cpp
 )
 
+# Add the continuous demo executable
+add_executable(demo_continuous
+    src/demo_continuous.cpp
+)
+
 # add_executable(test_performance
 #     ${MODEL}
 #     src/test_performance_superpoint.cpp
@@ -70,5 +75,10 @@ add_executable(demo
 
 # Link libraries for the demo executable
 target_link_libraries(demo
+    SuperPointLib
+)
+
+# Link libraries for the continuous demo executable
+target_link_libraries(demo_continuous
     SuperPointLib
 )
