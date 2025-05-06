@@ -362,7 +362,12 @@ namespace vitis {
                 std::lock_guard<std::mutex> lock(mutex_);
                 return shutdown_;
             }
-        };
+        
+            int size() const {
+                std::lock_guard<std::mutex> lock(mutex_);
+                return queue_.size();
+            }
+          };
 
         // Data structures for pipeline stages
         struct DpuInferenceTask {

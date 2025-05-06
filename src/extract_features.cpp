@@ -199,19 +199,32 @@ int main(int argc, char* argv[]) {
         superpoint.run(input_queue, output_queue, hold_images);
         
         // Start producer thread to feed images when rate limiting allows
-        std::thread producer_thread([&image_paths, &input_queue, &hold_images]() {
+        std::thread producer_thread([&image_paths, &input_queue, &hold_images, &kpts_folder, &desc_folder]() {
             size_t count = 0;
             auto start_time = std::chrono::high_resolution_clock::now();
             
             for (const auto& img_path : image_paths) {
+                // Extract base filename from the image path
+                std::string base_filename = fs::path(img_path).stem().string();
+                
+                // Define filenames for keypoints and descriptors
+                std::string kpts_filename = kpts_folder + "/" + base_filename + ".kp";
+                std::string desc_filename = desc_folder + "/" + base_filename + ".desc";
+                
+                // Check if both files already exist
+                if (fs::exists(kpts_filename) && fs::exists(desc_filename)) {
+                    std::cout << "Skipping " << base_filename << " - feature files already exist" << std::endl;
+                    continue;  // Skip to next image
+                }
+
                 // Check rate limiting - wait until processing pipeline is ready for more
                 size_t held_count = 0;
-                while (hold_images.load()) {
+                while (hold_images.load()){
                     ++held_count;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(75));
                 }
                 if (held_count > 0) {
-                    std::cout << "Producer waited " << held_count*5 << " ms for back-pressure\n";
+                    std::cout << "Producer waited " << held_count*75 << " ms for back-pressure\n";
                 }
                 
                 // Read image
@@ -229,7 +242,7 @@ int main(int argc, char* argv[]) {
                 
                 // Add to queue
                 input_queue.enqueue(item);
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
                 
                 // std::cout << "Enqueued image " << count << ": " << img_path.filename().string() << std::endl;
             }
