@@ -98,7 +98,7 @@ int main(int argc, char* argv[]) {
   }
   
   try {    
-    auto superpoint = vitis::ai::SuperPointFast(model_name, num_threads);
+    auto superpoint = SuperPointFast(model_name, num_threads);
 
         // Prepare input images
         vector<Mat> imgs;    

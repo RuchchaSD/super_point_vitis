@@ -127,11 +127,11 @@ int main(int argc, char* argv[]) {
 
   try {
     // Initialize SuperPointFast
-    auto superpoint = vitis::ai::SuperPointFast(model_name, num_threads);
+    auto superpoint = SuperPointFast(model_name, num_threads);
     
     // Create thread-safe queues
-    vitis::ai::ThreadSafeQueue<vitis::ai::InputQueueItem> input_queue(20);
-    vitis::ai::ThreadSafeQueue<vitis::ai::SuperPointResult> output_queue(50);
+    ThreadSafeQueue<InputQueueItem> input_queue(20);
+    ThreadSafeQueue<SuperPointResult> output_queue(50);
 
     
     // Start the SuperPointFast processor 
@@ -152,7 +152,7 @@ int main(int argc, char* argv[]) {
         }
         
         // Create input queue item
-        vitis::ai::InputQueueItem item;
+        InputQueueItem item;
         item.index = count++;
         item.image = img;
         
@@ -178,10 +178,10 @@ int main(int argc, char* argv[]) {
       size_t result_count = 0;
       std::vector<size_t> result_indices;
 
-      std::vector<vitis::ai::SuperPointResult> results;
+      std::vector<SuperPointResult> results;
       auto start_time = std::chrono::high_resolution_clock::now();
       
-      vitis::ai::SuperPointResult result;
+      SuperPointResult result;
       while (output_queue.dequeue(result)) {
         result_count++;
         result_indices.push_back(result.index);
