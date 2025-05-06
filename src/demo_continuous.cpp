@@ -130,29 +130,19 @@ int main(int argc, char* argv[]) {
     auto superpoint = vitis::ai::SuperPointFast(model_name, num_threads);
     
     // Create thread-safe queues
-    vitis::ai::ThreadSafeQueue<vitis::ai::InputQueueItem> input_queue;
-    vitis::ai::ThreadSafeQueue<vitis::ai::SuperPointResult> output_queue;
-    
-    // Atomic flag for rate limiting
-    std::atomic<bool> hold_images{false};
+    vitis::ai::ThreadSafeQueue<vitis::ai::InputQueueItem> input_queue(20);
+    vitis::ai::ThreadSafeQueue<vitis::ai::SuperPointResult> output_queue(50);
+
     
     // Start the SuperPointFast processor 
-    superpoint.run(input_queue, output_queue, hold_images);
+    superpoint.run(input_queue, output_queue);
     
     // Start producer thread to feed images when rate limiting allows
-    std::thread producer_thread([&image_paths, &input_queue, &hold_images]() {
+    std::thread producer_thread([&image_paths, &input_queue]() {
       size_t count = 0;
       auto start_time = std::chrono::high_resolution_clock::now();
       
       for (const auto& img_path : image_paths) {
-        // Check rate limiting - wait until processing pipeline is ready for more
-        size_t held_count = 0;
-        while (hold_images.load()) {
-            ++held_count;
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        }
-        if(held_count > 0)
-            std::cout << "Producer waited " << held_count*5 << " ms for back-pressure\n";
         
         // Read image
         cv::Mat img = cv::imread(img_path.string(), cv::IMREAD_COLOR);
@@ -169,7 +159,7 @@ int main(int argc, char* argv[]) {
         // Add to queue
         input_queue.enqueue(item);
         //there should be some delay to preserve order
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
         
         // std::cout << "Enqueued image " << count << ": " << img_path.filename().string()
         //           << " (index: " << item.index << ")" << std::endl;

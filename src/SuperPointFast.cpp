@@ -24,7 +24,8 @@ namespace vitis {
         outputW = output_tensors[0].width;
         output2H = output_tensors[1].height;
         output2W = output_tensors[1].width;
-        conf_thresh = 0.007;
+        // conf_thresh = 0.007;
+        conf_thresh = 0.015;
         
         scale0 = vitis::ai::library::tensor_scale(input_tensors_[0]);
 
@@ -466,24 +467,23 @@ namespace vitis {
 
 
         // Overloaded run function for continuous processing with queues
-        void SuperPointFast::run( ThreadSafeQueue<InputQueueItem>& input_queue, ThreadSafeQueue<SuperPointResult>& output_queue,std::atomic<bool>& hold_images) 
+        void SuperPointFast::run( ThreadSafeQueue<InputQueueItem>& input_queue, ThreadSafeQueue<SuperPointResult>& output_queue) 
         {
             // If a previous run() is still alive, wait for it.
             if (pipeline_thread_.joinable()) pipeline_thread_.join();
 
             // Launch the pipeline in its own thread so the caller regains control.
-            pipeline_thread_ = std::thread([this, &input_queue, &output_queue, &hold_images]()
+            pipeline_thread_ = std::thread([this, &input_queue, &output_queue]()
             {
                 // ───────────────  Stage-local queues  ───────────────
-                auto task_queue   = std::make_shared<ThreadSafeQueue<DpuInferenceTask>>();
-                auto result_queue = std::make_shared<ThreadSafeQueue<DpuInferenceResult>>();
+                auto task_queue   = std::make_shared<ThreadSafeQueue<DpuInferenceTask>>(20);
+                auto result_queue = std::make_shared<ThreadSafeQueue<DpuInferenceResult>>(50);
 
-                std::atomic<int> tasks_in_flight{0};
                 // ─────────────── 1.  Pre-processing stage ───────────────
                 std::vector<std::thread> preproc_threads;
                 for (int t = 0; t < num_threads_; ++t) 
                 {
-                    preproc_threads.emplace_back([this, &input_queue, task_queue, &tasks_in_flight, &hold_images]() 
+                    preproc_threads.emplace_back([this, &input_queue, task_queue]() 
                     {
                         while (true) 
                         {
@@ -501,16 +501,14 @@ namespace vitis {
 
                             task_queue->enqueue(
                                 pre_process_image(item)
-                            );
-                            int now = tasks_in_flight.fetch_add(1) + 1;
-                            hold_images.store(now >= 3*num_threads_);                            
+                            );                            
                         }
                     }
                     );
                 }
 
                 // ─────────────── 2.  DPU-inference stage ───────────────
-                std::thread dpu_thread([this, task_queue, result_queue, &tasks_in_flight, &hold_images]() 
+                std::thread dpu_thread([this, task_queue, result_queue]() 
                 {
                     // Re-use the existing dpu_inference() helper but under our own lifetime.
                     this->dpu_inference(*task_queue, *result_queue);
@@ -519,7 +517,7 @@ namespace vitis {
                 // ─────────────── 3.  Post-processing stage ───────────────
                 std::vector<std::thread> postproc_threads;
                 for (int t = 0; t < num_threads_; ++t) {
-                    postproc_threads.emplace_back([this, result_queue, &output_queue,&tasks_in_flight, &hold_images]() {
+                    postproc_threads.emplace_back([this, result_queue, &output_queue]() {
                         DpuInferenceResult raw;
                         while (result_queue->dequeue(raw)) {
                             SuperPointResult r = this->process_result(raw);
@@ -529,8 +527,6 @@ namespace vitis {
                                 throw std::runtime_error("Output queue should not be shutdowned by caller");
                             }
 
-                            int now = tasks_in_flight.fetch_sub(1) - 1;
-                            hold_images.store(now >= 3*num_threads_);
                         }
                     });
                 }
@@ -541,11 +537,7 @@ namespace vitis {
                 dpu_thread.join();
                 result_queue->shutdown();
                 for (auto& th : postproc_threads) th.join();
-                output_queue.shutdown();
-                
-                // Signal downstream that nothing else will arrive.
-                hold_images.store(false);
-                
+                output_queue.shutdown();               
                 
             }
             );
