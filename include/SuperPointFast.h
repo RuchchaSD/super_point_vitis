@@ -24,7 +24,8 @@
 #include <stdexcept>
 #include <cstddef>
 
-#include <opencv2/core.hpp>
+ #include <opencv2/core/core.hpp>
+ #include <opencv2/features2d/features2d.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 
@@ -76,8 +77,8 @@ namespace vitis {
             size_t index;  // To keep track of the image order
             std::string name;
             cv::Mat img;
-            std::vector<std::pair<float, float>> keypoints;
-            std::vector<std::vector<float>> descriptor;
+            std::vector<cv::KeyPoint> keypoints_cv;  // OpenCV KeyPoints
+            cv::Mat descriptors_cv;  // OpenCV Mat descriptors
             float scale_w;
             float scale_h;
         };
@@ -292,7 +293,10 @@ namespace vitis {
                         vector<size_t>& keep_inds, const int inputW, const int inputH) {
             vector<vector<int>> grid(inputW, vector<int>(inputH, 0));
             vector<pair<float, size_t>> order;
-            int dist_thresh = 4; // Higher means more aggressive NMS
+
+            //Check Here: Higher means more aggressive NMS
+            // int dist_thresh = 3; // Helitha
+            int dist_thresh = 4; // Xilinx
             for (size_t i = 0; i < ptscore.size(); ++i) {
               order.push_back({ptscore[i], i});
             }

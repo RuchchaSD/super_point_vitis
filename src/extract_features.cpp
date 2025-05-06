@@ -32,52 +32,6 @@ namespace fs = std::filesystem;
 using namespace std;
 using namespace cv;
 
-// Convert SuperPoint keypoints to OpenCV KeyPoints format
-std::vector<cv::KeyPoint> convertToKeypoints(const vitis::ai::SuperPointResult& result) {
-    std::vector<cv::KeyPoint> keypoints;
-    keypoints.reserve(result.keypoints.size());
-    
-    for (size_t i = 0; i < result.keypoints.size(); ++i) {
-        const auto& kp = result.keypoints[i];
-        // Scale keypoint coordinates to original image size
-        float x = kp.first * result.scale_w;
-        float y = kp.second * result.scale_h;
-        
-        // Create OpenCV keypoint (with reasonable defaults for other parameters)
-        cv::KeyPoint cvKeypoint(x, y, 8.0f);  // 8.0 is a common default size
-        cvKeypoint.response = 1.0f; // Default response        
-        cvKeypoint.octave = 0;  // Default octave
-        cvKeypoint.class_id = -1;  // No class ID
-        
-        keypoints.push_back(cvKeypoint);
-    }
-    
-    return keypoints;
-}
-
-// Convert SuperPoint descriptors to OpenCV Mat format
-cv::Mat convertToDescriptors(const vitis::ai::SuperPointResult& result) {
-    // Get number of keypoints and descriptor dimension
-    int numKeypoints = result.keypoints.size();
-    int descDim = 256; // SuperPoint uses 256-dim descriptors
-    
-    // Create a matrix with one row per keypoint and 256 columns (SuperPoint descriptor size)
-    cv::Mat descriptors(numKeypoints, descDim, CV_32F);
-    
-    // Fill descriptor matrix with values
-    for (int i = 0; i < numKeypoints; i++) {
-        if (i < result.descriptor.size()) {
-            const auto& desc = result.descriptor[i];
-            // Copy descriptor values to matrix row
-            for (int j = 0; j < std::min(descDim, (int)desc.size()); j++) {
-                descriptors.at<float>(i, j) = desc[j];
-            }
-        }
-    }
-    
-    return descriptors;
-}
-
 void print_usage(char* prog_name) {
     std::cout << "Usage: " << prog_name << " [options] model_name input_folder output_folder" << std::endl;
     std::cout << "Options:" << std::endl;
@@ -232,8 +186,6 @@ int main(int argc, char* argv[]) {
                 input_queue.enqueue(item);
                 //there should be some delay to preserve order
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                
-                // std::cout << "Enqueued image " << count << ": " << img_path.filename().string() << std::endl;
             }
             
             auto end_time = std::chrono::high_resolution_clock::now();
@@ -260,21 +212,17 @@ int main(int argc, char* argv[]) {
                     base_filename = "image_" + std::to_string(result.index);
                 }
                 
-                // Convert SuperPoint keypoints/descriptors to OpenCV format
-                std::vector<cv::KeyPoint> keypoints = convertToKeypoints(result);
-                cv::Mat descriptors = convertToDescriptors(result);
-                
                 // Define filenames for keypoints and descriptors
                 std::string kpts_filename = kpts_folder + "/" + base_filename + ".kp";
                 std::string desc_filename = desc_folder + "/" + base_filename + ".desc";
                 
-                // Save keypoints and descriptors
-                bool saved = FeatExtraction::FeatureIO::saveFeatures(keypoints, descriptors, 
-                                                                    kpts_filename, desc_filename);
+                // Use keypoints_cv and descriptors_cv directly
+                bool saved = FeatExtraction::FeatureIO::saveFeatures(result.keypoints_cv, result.descriptors_cv, 
+                                                                     kpts_filename, desc_filename);
                 
                 if (saved) {
                     std::cout << "Saved features for " << base_filename 
-                              << " (keypoints: " << keypoints.size() << ")" << std::endl;
+                              << " (keypoints: " << result.keypoints_cv.size() << ")" << std::endl;
                 } else {
                     std::cerr << "Error saving features for " << base_filename << std::endl;
                 }

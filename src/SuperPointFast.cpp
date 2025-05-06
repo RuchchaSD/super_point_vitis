@@ -24,8 +24,8 @@ namespace vitis {
         outputW = output_tensors[0].width;
         output2H = output_tensors[1].height;
         output2W = output_tensors[1].width;
-        // conf_thresh = 0.007;
-        conf_thresh = 0.015;
+        // conf_thresh = 0.007; // Helitha
+        conf_thresh = 0.015; // Xilinx
         
         scale0 = vitis::ai::library::tensor_scale(input_tensors_[0]);
 
@@ -383,17 +383,53 @@ namespace vitis {
         L2_normalization(out2, scale2, channel2, output2H * output2W, output2.data());
         __TOC__(L2_NORMAL)
 
-        // Extract keypoints
+        // Extract keypoints and create OpenCV keypoints vector
         __TIC__(DESC)
+        std::vector<std::pair<float, float>> kps; // Temporary for bilinear sampling
+        sp_result.keypoints_cv.clear();
+        sp_result.keypoints_cv.reserve(keep_inds.size());
+        
+        // Extract keypoints
         for (size_t i = 0; i < keep_inds.size(); ++i) {
-        std::pair<float, float> pt;
-        pt.first = float(xs[keep_inds[i]]);
-        pt.second = float(ys[keep_inds[i]]);
-        sp_result.keypoints.push_back(pt);
+            float x = float(xs[keep_inds[i]]);
+            float y = float(ys[keep_inds[i]]);
+            
+            // Create OpenCV keypoint
+            cv::KeyPoint kp(
+                x * result.scale_w,  // scaled x
+                y * result.scale_h,  // scaled y
+                8.0f,                // size
+                -1.0f,               // angle
+                ptscore[keep_inds[i]], // response
+                0,                   // octave
+                -1                   // class id
+            );
+            
+            sp_result.keypoints_cv.push_back(kp);
+            
+            // Keep the unscaled points for descriptor sampling
+            kps.push_back(std::make_pair(x, y));
         }
-
+        
         // Descriptor extraction - use optimized bilinear sampling
-        bilinear_sample(output2.data(), output2H, output2W, channel2, sp_result.keypoints, sp_result.descriptor);
+        std::vector<std::vector<float>> descriptors;
+        bilinear_sample(output2.data(), output2H, output2W, channel2, kps, descriptors);
+        
+        // Convert descriptors to OpenCV Mat format
+        if (!descriptors.empty()) {
+            int numKeypoints = descriptors.size();
+            int descDim = descriptors[0].size();
+            
+            cv::Mat cv_descriptors(numKeypoints, descDim, CV_32F);
+            for (int i = 0; i < numKeypoints; i++) {
+                for (int j = 0; j < descDim; j++) {
+                    cv_descriptors.at<float>(i, j) = descriptors[i][j];
+                }
+            }
+            
+            // Assign to result
+            sp_result.descriptors_cv = cv_descriptors;
+        }
         __TOC__(DESC)
 
         return sp_result;

@@ -197,16 +197,16 @@ int main(int argc, char* argv[]) {
         cv::Mat result_img = res.img.clone();
         
         // Draw keypoints directly on the image
-        for (const auto& kp : res.keypoints) {
-          // Scale keypoints to original image size
+        for (const auto& kp : res.keypoints_cv) {
+          // Draw keypoint
           cv::circle(result_img, 
-                    cv::Point(kp.first * res.scale_w, kp.second * res.scale_h), 
+                    cv::Point(kp.pt.x, kp.pt.y), 
                     3, cv::Scalar(0, 0, 255), -1);  // Red dots for keypoints
           
           // Optional: Draw small circle around keypoint for better visibility
           cv::circle(result_img, 
-                    cv::Point(kp.first * res.scale_w, kp.second * res.scale_h), 
-                    5, cv::Scalar(0, 255, 0), 1);  // red circle around keypoint
+                    cv::Point(kp.pt.x, kp.pt.y), 
+                    5, cv::Scalar(0, 255, 0), 1);  // Green circle around keypoint
         }
         
         // Save image
@@ -215,7 +215,7 @@ int main(int argc, char* argv[]) {
         cv::imwrite(output_filename, result_img);
 
         std::cout << " (index: " << res.index 
-        << ", keypoints: " << res.keypoints.size() << ")" << std::endl;
+        << ", keypoints: " << res.keypoints_cv.size() << ")" << std::endl;
       }
       
       // Check if result order matches input order
