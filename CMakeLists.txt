@@ -75,37 +75,49 @@ target_link_libraries(SuperPointLib
 )
 
 
-add_executable(demo
-    src/demo_superpoint.cpp
-)
-
-# Add the continuous demo executable
-add_executable(demo_continuous
-    src/demo_continuous.cpp
-)
-
-# Add the feature extraction executable
-add_executable(extract_features
-    src/extract_features.cpp
-)
-
-# add_executable(test_performance
-#     ${MODEL}
-#     src/test_performance_superpoint.cpp
+# add_executable(demo
+#     src/demo_superpoint.cpp
 # )
 
-# Link libraries for the demo executable
-target_link_libraries(demo
-    SuperPointLib
+# # Add the continuous demo executable
+# add_executable(demo_continuous
+#     src/demo_continuous.cpp
+# )
+
+# # Add the feature extraction executable
+# add_executable(extract_features
+#     src/extract_features.cpp
+# )
+
+# # add_executable(test_performance
+# #     ${MODEL}
+# #     src/test_performance_superpoint.cpp
+# # )
+
+# # Link libraries for the demo executable
+# target_link_libraries(demo
+#     SuperPointLib
+# )
+
+# # Link libraries for the continuous demo executable
+# target_link_libraries(demo_continuous
+#     SuperPointLib
+# )
+
+# # Link libraries for the feature extraction executable
+# target_link_libraries(extract_features
+#     SuperPointLib
+#     FeatureIO
+# )
+
+
+## testing cruz
+add_executable(superpoint_benchmark
+    src/superpoint_benchmark.cpp
 )
 
-# Link libraries for the continuous demo executable
-target_link_libraries(demo_continuous
+target_link_libraries(superpoint_benchmark
     SuperPointLib
-)
-
-# Link libraries for the feature extraction executable
-target_link_libraries(extract_features
-    SuperPointLib
-    FeatureIO
+    ${OpenCV_LIBS}
+    glog::glog
 )
