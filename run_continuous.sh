@@ -34,7 +34,7 @@ echo "Found ${NUM_FILES} ${FILE_EXT} files in ${INPUT_DIR}"
 echo ""
 
 # Build command line arguments
-CMD="./build/demo_continuous"
+CMD="./bin/demo_continuous"
 
 # Add threads parameter
 CMD="${CMD} -t ${THREADS}"

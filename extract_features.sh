@@ -33,7 +33,7 @@ echo "Found ${NUM_FILES} ${FILE_EXT} files in ${INPUT_DIR}"
 echo ""
 
 # Build command line arguments
-CMD="./build/extract_features"
+CMD="./bin/extract_features"
 
 # Add threads parameter
 CMD="${CMD} -t ${THREADS}"

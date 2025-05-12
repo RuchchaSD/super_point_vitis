@@ -32,7 +32,7 @@ echo ""
 mkdir -p ${OUTPUT_DIR}
 
 # Build command line arguments
-CMD="./build/demo"
+CMD="./bin/demo"
 
 # Add implementation flag
 if [ "$IMPLEMENTATION" == "single" ]; then
