@@ -15,7 +15,7 @@ find_package(Glog REQUIRED HINTS ${GLOG_PATH})
 
 # Find packages
 # set(OpenCV_DIR "/root/opencv_build/opencv/build") 
-find_package(OpenCV 4.5.4 REQUIRED)
+find_package(OpenCV REQUIRED)
 # find_package(OpenCV 4.6.0 REQUIRED)
 find_package(VART 3.5.0 REQUIRED)
 find_package(UNILOG 3.5.0 REQUIRED)
@@ -35,21 +35,34 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(include)
 
 set(MODEL
-    src/superpoint.cpp 
+    # src/SuperPoint.cpp 
+    # src/SuperPointSingleImp.cpp
+    src/SuperPointFast.cpp
 )
 
-add_executable(demo
+add_library(FeatureIO SHARED
+    src/FeatureIO.cpp
+)
+
+# Link libraries for the FeatureIO library
+target_link_libraries(FeatureIO
+    ${OpenCV_LIBS}
+)
+
+# Specify include directories for the FeatureIO library
+target_include_directories(FeatureIO PUBLIC
+    ${OpenCV_INCLUDE_DIRS}
+    ${PROJECT_SOURCE_DIR}/include
+)
+
+
+# Add the source files to the library
+add_library(SuperPointLib SHARED
     ${MODEL}
-    src/demo_superpoint.cpp
 )
 
-# add_executable(test_performance
-#     ${MODEL}
-#     src/test_performance_superpoint.cpp
-# )
-
-# Link libraries for the demo executable
-target_link_libraries(demo
+# Link libraries for the SuperPointLib library
+target_link_libraries(SuperPointLib
     ${OpenCV_LIBS}
     vart::runner
     vart::util
@@ -61,15 +74,38 @@ target_link_libraries(demo
     vitis_ai_library::math
 )
 
-# Link libraries for the test_performance executable
-# target_link_libraries(test_performance
-#     ${OpenCV_LIBS}
-#     vart::runner
-#     vart::util
-#     xir::xir
-#     unilog::unilog
-#     glog::glog
-#     Threads::Threads
-#     vitis_ai_library::dpu_task
-#     vitis_ai_library::math
+
+add_executable(demo
+    src/demo_superpoint.cpp
+)
+
+# Add the continuous demo executable
+add_executable(demo_continuous
+    src/demo_continuous.cpp
+)
+
+# Add the feature extraction executable
+add_executable(extract_features
+    src/extract_features.cpp
+)
+
+# add_executable(test_performance
+#     ${MODEL}
+#     src/test_performance_superpoint.cpp
 # )
+
+# Link libraries for the demo executable
+target_link_libraries(demo
+    SuperPointLib
+)
+
+# Link libraries for the continuous demo executable
+target_link_libraries(demo_continuous
+    SuperPointLib
+)
+
+# Link libraries for the feature extraction executable
+target_link_libraries(extract_features
+    SuperPointLib
+    FeatureIO
+)

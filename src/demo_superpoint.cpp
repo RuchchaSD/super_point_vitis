@@ -1,25 +1,11 @@
-/*
- * Copyright 2022-2023 Advanced Micro Devices Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+
 #include <glog/logging.h>
 #include <iostream>
 #include <string>
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
-#include "./superpoint.hpp"
+#include "SuperPointFast.h"
 
 using namespace std;
 using namespace cv;
@@ -27,17 +13,16 @@ using namespace cv;
 void print_usage(char* prog_name) {
   std::cout << "Usage: " << prog_name << " [options] model_name image" << std::endl;
   std::cout << "Options:" << std::endl;
-  std::cout << "  -s            Use single-threaded implementation (default: multi-threaded)" << std::endl;
-  std::cout << "  -t <num>      Number of DPU runners to use (default: 2)" << std::endl;
-  std::cout << "  -i <num>      Number of iterations (default: 1)" << std::endl;
+  std::cout << "  -t <num>      Number of preprocessing/postprocessing threads to use (default: 2)" << std::endl;
+  std::cout << "                Note: DPU runners fixed at 4" << std::endl;
+  std::cout << "  -i <num>      Number of iterations (default: 10)" << std::endl;
   std::cout << "Example: " << prog_name << " -s superpoint_tf.xmodel test.jpg" << std::endl;
-  std::cout << "         " << prog_name << " -t 4 superpoint_tf.xmodel test.jpg" << std::endl;
+  std::cout << "         " << prog_name << " -t 8 superpoint_tf.xmodel test.jpg" << std::endl;
 }
 
 int main(int argc, char* argv[]) {
   // Default parameters
-  bool use_single_threaded = false;
-  int num_runners = 2;
+  int num_threads = 2;  // Now controls pre/post-processing threads (DPU runners fixed at 4) 
   int num_iterations = 10;  // Default changed to 10 for throughput calculation
   std::string model_name;
   std::string image_path;
@@ -46,12 +31,9 @@ int main(int argc, char* argv[]) {
   int arg_index = 1;
   while (arg_index < argc) {
     std::string arg = argv[arg_index];
-    if (arg == "-s") {
-      use_single_threaded = true;
-      arg_index++;
-    } else if (arg == "-t") {
+    if (arg == "-t") {
       if (arg_index + 1 < argc) {
-        num_runners = std::stoi(argv[arg_index + 1]);
+        num_threads = std::stoi(argv[arg_index + 1]);
         arg_index += 2;
       } else {
         std::cerr << "Error: Missing value for -t option" << std::endl;
@@ -87,10 +69,9 @@ int main(int argc, char* argv[]) {
   }
   
   std::cout << "Configuration:" << std::endl;
-  std::cout << "- Implementation: " << (use_single_threaded ? "Single-threaded" : "Multi-threaded") << std::endl;
-  if (!use_single_threaded) {
-    std::cout << "- Number of runners: " << num_runners << std::endl;
-  }
+
+  std::cout << "- Number of pre/post-processing threads: " << num_threads << std::endl;
+  std::cout << "- Number of DPU runners: 4 (fixed)" << std::endl;
   std::cout << "- Model: " << model_name << std::endl;
   std::cout << "- Image: " << image_path << std::endl;
   std::cout << "- Iterations: " << num_iterations << std::endl;
@@ -102,40 +83,23 @@ int main(int argc, char* argv[]) {
     return 1;
   }
   
-  try {
-    // Create SuperPoint instance with appropriate implementation
-    auto impl_type = use_single_threaded ? 
-                    vitis::ai::SuperPoint::ImplType::SINGLE_THREADED : 
-                    vitis::ai::SuperPoint::ImplType::MULTI_THREADED;
-    
-    auto superpoint = vitis::ai::SuperPoint::create(model_name, impl_type, num_runners);
-    if (!superpoint) {
-       std::cerr << "Error: Failed to create SuperPoint instance" << std::endl;
-       return 1;
-    }
+  try {    
+    auto superpoint = SuperPointFast(model_name, num_threads);
 
-    // Prepare input images
-    vector<Mat> imgs;
-    for (size_t i = 0; i < superpoint->get_input_batch(); ++i) {
-      imgs.push_back(img);
-    }
-    
-    //warm up the model
-    auto result = superpoint->run(imgs);
-
-    // Run inference
+        // Prepare input images
+        vector<Mat> imgs;    
+        
+        for(int i = 1; i < num_iterations; ++i) {
+          imgs.push_back(img);
+        }
+        // Run inference
     auto start = chrono::high_resolution_clock::now();
-    
-    for(int i = 1; i < num_iterations; ++i) {
-        imgs.push_back(img);
-    }
-    result = superpoint->run(imgs);
-
+        auto result = superpoint.run(imgs);
     auto end = chrono::high_resolution_clock::now();
 
     // Report timing and throughput
     auto duration = chrono::duration_cast<chrono::milliseconds>((end - start));
-    int total_images = superpoint->get_input_batch() * num_iterations;
+    int total_images = superpoint.get_input_batch() * num_iterations;
     float throughput = 1000.0f * total_images / duration.count(); // images per second
     
     std::cout << "Processed " << total_images << " images in " 
@@ -145,20 +109,18 @@ int main(int argc, char* argv[]) {
     std::cout << "Throughput: " << throughput << " images/second" << std::endl;
     
     // Draw and save results (only for the last result to avoid too many output images)
-    for (size_t i = 0; i < superpoint->get_input_batch(); ++i) {
-      std::cout << "Image " << i << " has " << result[i].keypoints.size() << " keypoints" << std::endl;
+    for (size_t i = 0; i < superpoint.get_input_batch(); ++i) {
+      std::cout << "Image " << i << " has " << result[i].keypoints_cv.size() << " keypoints" << std::endl;
       Mat result_img = imgs[i].clone();
       
       // Draw keypoints
-      for (size_t k = 0; k < result[i].keypoints.size(); ++k) {
+      for (const auto& kp : result[i].keypoints_cv) {
         circle(result_img, 
-               Point(result[i].keypoints[k].first * result[i].scale_w,
-                     result[i].keypoints[k].second * result[i].scale_h), 
+               Point(kp.pt.x, kp.pt.y), 
                2, Scalar(0, 0, 255), -1);
       }
       
-      std::string output_filename = "result_superpoint_" + 
-                                    std::string(use_single_threaded ? "single_" : "multi_") + 
+      std::string output_filename = "result_superpoint_multi_" + 
                                     std::to_string(i) + ".jpg";
       imwrite(output_filename, result_img);
       std::cout << "Saved result to " << output_filename << std::endl;
