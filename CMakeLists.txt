@@ -79,15 +79,15 @@ target_link_libraries(SuperPointLib
 #     src/demo_superpoint.cpp
 # )
 
-# # Add the continuous demo executable
-# add_executable(demo_continuous
-#     src/demo_continuous.cpp
-# )
+# Add the continuous demo executable
+add_executable(demo_continuous
+    src/demo_continuous.cpp
+)
 
-# # Add the feature extraction executable
-# add_executable(extract_features
-#     src/extract_features.cpp
-# )
+# Add the feature extraction executable
+add_executable(extract_features
+    src/extract_features.cpp
+)
 
 # # add_executable(test_performance
 # #     ${MODEL}
@@ -99,19 +99,19 @@ target_link_libraries(SuperPointLib
 #     SuperPointLib
 # )
 
-# # Link libraries for the continuous demo executable
-# target_link_libraries(demo_continuous
-#     SuperPointLib
-# )
+# Link libraries for the continuous demo executable
+target_link_libraries(demo_continuous
+    SuperPointLib
+)
 
-# # Link libraries for the feature extraction executable
-# target_link_libraries(extract_features
-#     SuperPointLib
-#     FeatureIO
-# )
+# Link libraries for the feature extraction executable
+target_link_libraries(extract_features
+    SuperPointLib
+    FeatureIO
+)
 
 
-## testing cruz
+# testing cruz
 add_executable(superpoint_benchmark
     src/superpoint_benchmark.cpp
 )

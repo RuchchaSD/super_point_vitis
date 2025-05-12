@@ -7,9 +7,9 @@ source /etc/profile.d/pynq_venv.sh
 # Default values (can be changed below or passed as environment variables)
 THREADS=${THREADS:-4}                  # Number of pre/post-processing threads
 
-#MODEL="/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/superpoint_tf.xmodel"
+MODEL="/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/superpoint_tf.xmodel"
 
-MODEL="/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/compiled_SP_by_H.xmodel"  # Model file name
+#MODEL="/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/compiled_SP_by_H.xmodel"  # Model file name
 INPUT_DIR=${INPUT_DIR:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/i_ajuntament"}      # Directory with input images
 OUTPUT_DIR=${OUTPUT_DIR:-"./results/benchmark"}  # Directory to store results
 FILE_EXT=${FILE_EXT:-"ppm"}            # File extension to filter input images
@@ -25,7 +25,7 @@ echo "Model: ${MODEL}"
 
 
 # Build command line arguments
-CMD="./build/superpoint_benchmark -h"
+CMD="./build/superpoint_benchmark "
 
 # Add threads parameter
 CMD="${CMD} -t ${THREADS}"

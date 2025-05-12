@@ -8,11 +8,12 @@ source /etc/profile.d/pynq_venv.sh
 # Extracts and saves keypoints and descriptors to separate folders
 
 # Default values (can be changed below or passed as environment variables)
-THREADS=${THREADS:-4}                        # Number of pre/post-processing threads
-MODEL=${MODEL:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/superpoint_tf.xmodel"}  # Model file name
-INPUT_DIR=${INPUT_DIR:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/temp/datasets/MH_01_easy/mav0/cam0/data"}  # Directory with input images
-OUTPUT_DIR=${OUTPUT_DIR:-"./feature_outputs/SP_TF"}       # Base directory for feature storage
+THREADS=${THREADS:-6}                        # Number of pre/post-processing threads
+MODEL=${MODEL:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/compiled_SP_by_H.xmodel"}  # Model file name
+INPUT_DIR=${INPUT_DIR:-"/root/jupyter_notebooks/Fyp/datasets/V101/mav0/cam0/data"}  # Directory with input images
+OUTPUT_DIR=${OUTPUT_DIR:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/feature_outputs/SP_H/V101"}       # Base directory for feature storage
 FILE_EXT=${FILE_EXT:-"png"}                  # File extension to filter input images
+DOWNSAMPLE=${DOWNSAMPLE:-0}                  # Downsample to process only N images (0 = process all)
 
 # Create output directory if it doesn't exist
 mkdir -p ${OUTPUT_DIR}
@@ -25,6 +26,9 @@ echo "Model: ${MODEL}"
 echo "Input directory: ${INPUT_DIR}"
 echo "Output directory: ${OUTPUT_DIR}"
 echo "File extension: ${FILE_EXT}"
+if [ "${DOWNSAMPLE}" -gt 0 ]; then
+    echo "Downsampling: Extract features from ~${DOWNSAMPLE} images"
+fi
 echo ""
 
 # Count input files
@@ -40,6 +44,11 @@ CMD="${CMD} -t ${THREADS}"
 
 # Add file extension filter
 CMD="${CMD} -f ${FILE_EXT}"
+
+# Add downsampling parameter if set
+if [ "${DOWNSAMPLE}" -gt 0 ]; then
+    CMD="${CMD} -d ${DOWNSAMPLE}"
+fi
 
 # Add model, input and output directories
 CMD="${CMD} ${MODEL} ${INPUT_DIR} ${OUTPUT_DIR}"

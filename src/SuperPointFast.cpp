@@ -22,8 +22,10 @@ SuperPointFast::SuperPointFast(const std::string& model_name, int num_threads)
     outputW = output_tensors[0].width;
     output2H = output_tensors[1].height;
     output2W = output_tensors[1].width;
-    // conf_thresh = 0.007; // Helitha
-    conf_thresh = 0.015; // Xilinx
+
+    this->num_threads_ = num_threads;
+     conf_thresh = 0.005; // Helitha
+    //conf_thresh = 0.015; // Xilinx
     
     scale0 = vitis::ai::library::tensor_scale(input_tensors_[0]);
 

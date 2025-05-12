@@ -6,6 +6,7 @@
 #include <thread>
 #include <chrono>
 #include <filesystem>
+#include <cmath>
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
@@ -23,6 +24,7 @@ void print_usage(char* prog_name) {
     std::cout << "  -t <num>      Number of preprocessing/postprocessing threads to use (default: 2)" << std::endl;
     std::cout << "                Note: DPU runners fixed at 4" << std::endl;
     std::cout << "  -f <ext>      File extension filter (default: jpg)" << std::endl;
+    std::cout << "  -d <num>      Downsample to process only <num> images, distributed evenly" << std::endl;
     std::cout << "Example: " << prog_name << " -t 4 superpoint_tf.xmodel ./imgs ./features" << std::endl;
 }
 
@@ -33,6 +35,7 @@ int main(int argc, char* argv[]) {
     std::string model_name;
     std::string input_folder;
     std::string output_folder;
+    int downsample_count = -1; // -1 means no downsampling
     
     // Parse command line arguments
     int arg_index = 1;
@@ -53,6 +56,20 @@ int main(int argc, char* argv[]) {
                 arg_index += 2;
             } else {
                 std::cerr << "Error: Missing value for -f option" << std::endl;
+                print_usage(argv[0]);
+                return 1;
+            }
+        } else if (arg == "-d") {
+            if (arg_index + 1 < argc) {
+                downsample_count = std::stoi(argv[arg_index + 1]);
+                if (downsample_count <= 0) {
+                    std::cerr << "Error: Downsample count must be positive" << std::endl;
+                    print_usage(argv[0]);
+                    return 1;
+                }
+                arg_index += 2;
+            } else {
+                std::cerr << "Error: Missing value for -d option" << std::endl;
                 print_usage(argv[0]);
                 return 1;
             }
@@ -123,6 +140,14 @@ int main(int argc, char* argv[]) {
     std::cout << "- File extension: " << file_ext << std::endl;
     std::cout << "- Total images found: " << image_paths.size() << std::endl;
 
+    // Calculate downsampling ratio if needed
+    int sampling_interval = 1;
+    if (downsample_count > 0 && downsample_count < image_paths.size()) {
+        sampling_interval = ceil(static_cast<float>(image_paths.size()) / downsample_count);
+        std::cout << "- Downsampling: processing every " << sampling_interval << "th image (" 
+                  << std::min(downsample_count, static_cast<int>(image_paths.size())) << " images)" << std::endl;
+    }
+
     try {
         // Initialize SuperPointFast
         auto superpoint = SuperPointFast(model_name, num_threads);
@@ -136,11 +161,18 @@ int main(int argc, char* argv[]) {
         superpoint.run(input_queue, output_queue);
         
         // Start producer thread to feed images when rate limiting allows
-        std::thread producer_thread([&image_paths, &input_queue, &kpts_folder, &desc_folder]() {
+        std::thread producer_thread([&image_paths, &input_queue, &kpts_folder, &desc_folder, sampling_interval]() {
             size_t count = 0;
             auto start_time = std::chrono::high_resolution_clock::now();
             
-            for (const auto& img_path : image_paths) {
+            for (size_t i = 0; i < image_paths.size(); i++) {
+                // Apply downsampling - only process every Nth image
+                if (i % sampling_interval != 0) {
+                    continue;
+                }
+                
+                const auto& img_path = image_paths[i];
+                
                 // Extract base filename from the image path
                 std::string base_filename = fs::path(img_path).stem().string();
                 
