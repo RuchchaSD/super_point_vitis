@@ -110,11 +110,11 @@ int main(int argc, char* argv[]) {
     
     // Draw and save results (only for the last result to avoid too many output images)
     for (size_t i = 0; i < superpoint.get_input_batch(); ++i) {
-      std::cout << "Image " << i << " has " << result[i].keypoints_cv.size() << " keypoints" << std::endl;
+      std::cout << "Image " << i << " has " << result[i].keypoints.size() << " keypoints" << std::endl;
       Mat result_img = imgs[i].clone();
       
       // Draw keypoints
-      for (const auto& kp : result[i].keypoints_cv) {
+      for (const auto& kp : result[i].keypoints) {
         circle(result_img, 
                Point(kp.pt.x, kp.pt.y), 
                2, Scalar(0, 0, 255), -1);
