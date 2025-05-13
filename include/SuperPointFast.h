@@ -64,9 +64,9 @@ class SuperPointFast {
 
     public:
     virtual ~SuperPointFast();
-    virtual std::vector<SuperPointResult> run(const std::vector<cv::Mat>& imgs);
+    virtual std::vector<ResultQueueItem> run(const std::vector<cv::Mat>& imgs);
 
-    void run(ThreadSafeQueue<InputQueueItem>& input_queue, ThreadSafeQueue<SuperPointResult>& output_queue);
+    void run(ThreadSafeQueue<InputQueueItem>& input_queue, ThreadSafeQueue<ResultQueueItem>& output_queue);
 
     virtual size_t get_input_batch();
     virtual int getInputWidth() const;
@@ -83,18 +83,18 @@ class SuperPointFast {
     void post_process(ThreadSafeQueue<DpuInferenceResult>& result_queue,
                     size_t thread_idx, size_t num_threads);
 
-    SuperPointResult process_result(const DpuInferenceResult& result);
+    ResultQueueItem process_result(const DpuInferenceResult& result);
     
 
     private:
     static const int NUM_DPU_RUNNERS = 4;  // Fixed number of DPU runners
-    int num_threads_;  // Number of pre/post-processing threads
+    int num_threads_ = 4;  // Number of pre/post-processing threads
     std::mutex results_mutex_;  // Mutex for synchronizing results access
     std::thread pipeline_thread_;
 
 
     std::vector<std::unique_ptr<vitis::ai::DpuTask>> runners_;
-    std::vector<SuperPointResult> results_;
+    std::vector<ResultQueueItem> results_;
     std::vector<vitis::ai::library::InputTensor> input_tensors_;
     vector<size_t> chans_;
 

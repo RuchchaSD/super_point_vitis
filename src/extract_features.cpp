@@ -129,7 +129,7 @@ int main(int argc, char* argv[]) {
         
         // Create thread-safe queues
         ThreadSafeQueue<InputQueueItem> input_queue(20);
-        ThreadSafeQueue<SuperPointResult> output_queue(50);
+        ThreadSafeQueue<ResultQueueItem> output_queue(50);
         
        
         // Start the SuperPointFast processor 
@@ -161,11 +161,12 @@ int main(int argc, char* argv[]) {
                     continue;
                 }
                 
-                // Create input queue item (store filename in the data field)
+                // Create input queue item with ORB_SLAM3 compatible fields
                 InputQueueItem item;
                 item.index = count++;
+                item.timestamp = 0.0;  // Set a default timestamp 
                 item.image = img;
-                item.name = img_path.filename().string();
+                item.filename = img_path.filename().string();
                 
                 // Add to queue
                 input_queue.enqueue(item);
@@ -186,14 +187,14 @@ int main(int argc, char* argv[]) {
             size_t result_count = 0;
             auto start_time = std::chrono::high_resolution_clock::now();
             
-            SuperPointResult result;
+            ResultQueueItem result;
             while (output_queue.dequeue(result)) {
                 result_count++;
                 
                 // Extract base filename without extension
-                std::string base_filename = fs::path(result.name).stem().string();
+                std::string base_filename = fs::path(result.filename).stem().string();
                 if (base_filename.empty()) {
-                    // If name wasn't passed through, use the index
+                    // If filename wasn't passed through, use the index
                     base_filename = "image_" + std::to_string(result.index);
                 }
                 
@@ -201,13 +202,13 @@ int main(int argc, char* argv[]) {
                 std::string kpts_filename = kpts_folder + "/" + base_filename + ".kp";
                 std::string desc_filename = desc_folder + "/" + base_filename + ".desc";
                 
-                // Use keypoints_cv and descriptors_cv directly
-                bool saved = FeatExtraction::FeatureIO::saveFeatures(result.keypoints_cv, result.descriptors_cv, 
-                                                                     kpts_filename, desc_filename);
+                // Use keypoints and descriptors directly
+                bool saved = FeatExtraction::FeatureIO::saveFeatures(result.keypoints, result.descriptors, 
+                                                                   kpts_filename, desc_filename);
                 
                 if (saved) {
                     std::cout << "Saved features for " << base_filename 
-                              << " (keypoints: " << result.keypoints_cv.size() << ")" << std::endl;
+                              << " (keypoints: " << result.keypoints.size() << ")" << std::endl;
                 } else {
                     std::cerr << "Error saving features for " << base_filename << std::endl;
                 }

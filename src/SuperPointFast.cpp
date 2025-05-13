@@ -5,6 +5,7 @@
 
 // Implementation of SuperPointFast methods
 SuperPointFast::SuperPointFast(const std::string& model_name, int num_threads)
+    : num_threads_(num_threads)
 {
     // Always create exactly 4 DPU runners regardless of input parameter
     for (int i = 0; i < NUM_DPU_RUNNERS; ++i) {
@@ -70,6 +71,8 @@ DpuInferenceTask SuperPointFast::pre_process_image(const cv::Mat& img, int idx)
 
     DpuInferenceTask task;
     task.index = idx;
+    task.timestamp = 0.0;  // Default timestamp
+    task.filename = "";    // Default empty filename
     task.img = img;
 
     // Resize image if needed
@@ -115,8 +118,9 @@ DpuInferenceTask SuperPointFast::pre_process_image(InputQueueItem inputItem)
 
     DpuInferenceTask task;
     task.index = inputItem.index;
+    task.timestamp = inputItem.timestamp;
     task.img = inputItem.image;
-    task.name = inputItem.name;
+    task.filename = inputItem.filename;
 
     auto img = inputItem.image;
 
@@ -194,8 +198,9 @@ void SuperPointFast::dpu_inference(ThreadSafeQueue<DpuInferenceTask>& task_queue
                 // Prepare result
                 DpuInferenceResult result;
                 result.index = task.index;
+                result.timestamp = task.timestamp;
                 result.img = task.img;
-                result.name = task.name;
+                result.filename = task.filename;
                 result.scale_w = task.scale_w;
                 result.scale_h = task.scale_h;
 
@@ -248,7 +253,7 @@ void SuperPointFast::post_process(ThreadSafeQueue<DpuInferenceResult>& result_qu
 
         // Process result
         __TIC__(PROCESS_RESULT)
-        SuperPointResult sp_result = process_result(result);
+        ResultQueueItem sp_result = process_result(result);
         __TOC__(PROCESS_RESULT)
 
         // Store result in a thread-safe manner
@@ -264,13 +269,12 @@ void SuperPointFast::post_process(ThreadSafeQueue<DpuInferenceResult>& result_qu
 }
 
 // Function to process a single result
-SuperPointResult SuperPointFast::process_result(const DpuInferenceResult& result) {
-    SuperPointResult sp_result;
+ResultQueueItem SuperPointFast::process_result(const DpuInferenceResult& result) {
+    ResultQueueItem sp_result;
     sp_result.index = result.index;
-    sp_result.img = result.img;
-    sp_result.name = result.name;
-    sp_result.scale_w = result.scale_w;
-    sp_result.scale_h = result.scale_h;
+    sp_result.timestamp = result.timestamp;
+    sp_result.image = result.img;
+    sp_result.filename = result.filename;
 
     // Post-processing steps
     const int8_t* out1 = result.output_data1.data();
@@ -378,8 +382,8 @@ SuperPointResult SuperPointFast::process_result(const DpuInferenceResult& result
     // Extract keypoints and create OpenCV keypoints vector
     __TIC__(DESC)
     std::vector<std::pair<float, float>> kps; // Temporary for bilinear sampling
-    sp_result.keypoints_cv.clear();
-    sp_result.keypoints_cv.reserve(keep_inds.size());
+    sp_result.keypoints.clear();
+    sp_result.keypoints.reserve(keep_inds.size());
     
     // Extract keypoints
     for (size_t i = 0; i < keep_inds.size(); ++i) {
@@ -397,7 +401,7 @@ SuperPointResult SuperPointFast::process_result(const DpuInferenceResult& result
             -1                   // class id
         );
         
-        sp_result.keypoints_cv.push_back(kp);
+        sp_result.keypoints.push_back(kp);
         
         // Keep the unscaled points for descriptor sampling
         kps.push_back(std::make_pair(x, y));
@@ -420,7 +424,7 @@ SuperPointResult SuperPointFast::process_result(const DpuInferenceResult& result
         }
         
         // Assign to result
-        sp_result.descriptors_cv = cv_descriptors;
+        sp_result.descriptors = cv_descriptors;
     }
     __TOC__(DESC)
 
@@ -428,7 +432,7 @@ SuperPointResult SuperPointFast::process_result(const DpuInferenceResult& result
 }
 
 // Run function with proper promise handling
-std::vector<SuperPointResult> SuperPointFast::run(const std::vector<cv::Mat>& imgs) {
+std::vector<ResultQueueItem> SuperPointFast::run(const std::vector<cv::Mat>& imgs) {
     // Create thread-safe queues for the pipeline
     auto task_queue = std::make_shared<ThreadSafeQueue<DpuInferenceTask>>();
     auto result_queue = std::make_shared<ThreadSafeQueue<DpuInferenceResult>>();
@@ -437,7 +441,7 @@ std::vector<SuperPointResult> SuperPointFast::run(const std::vector<cv::Mat>& im
     results_.resize(imgs.size());
 
     // Create a promise that will be fulfilled when processing is complete
-    auto promise = std::make_shared<std::promise<std::vector<SuperPointResult>>>();
+    auto promise = std::make_shared<std::promise<std::vector<ResultQueueItem>>>();
     auto future = promise->get_future();
 
     // Start pre-processing threads (multiple threads based on num_threads_)
@@ -492,7 +496,7 @@ std::vector<SuperPointResult> SuperPointFast::run(const std::vector<cv::Mat>& im
 }
 
 // Overloaded run function for continuous processing with queues
-void SuperPointFast::run(ThreadSafeQueue<InputQueueItem>& input_queue, ThreadSafeQueue<SuperPointResult>& output_queue) 
+void SuperPointFast::run(ThreadSafeQueue<InputQueueItem>& input_queue, ThreadSafeQueue<ResultQueueItem>& output_queue) 
 {
     // If a previous run() is still alive, wait for it.
     if (pipeline_thread_.joinable()) pipeline_thread_.join();
@@ -545,13 +549,12 @@ void SuperPointFast::run(ThreadSafeQueue<InputQueueItem>& input_queue, ThreadSaf
             postproc_threads.emplace_back([this, result_queue, &output_queue]() {
                 DpuInferenceResult raw;
                 while (result_queue->dequeue(raw)) {
-                    SuperPointResult r = this->process_result(raw);
+                    ResultQueueItem r = this->process_result(raw);
                     if (!output_queue.is_shutdown()) {
                         output_queue.enqueue(r);
-                    }else{
+                    } else {
                         throw std::runtime_error("Output queue should not be shutdowned by caller");
                     }
-
                 }
             });
         }

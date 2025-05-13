@@ -116,7 +116,7 @@ int main(int argc, char* argv[]) {
     
     // Create thread-safe queues
     ThreadSafeQueue<InputQueueItem> input_queue(20);
-    ThreadSafeQueue<SuperPointResult> output_queue(50);
+    ThreadSafeQueue<ResultQueueItem> output_queue(50);
 
     
     // Start the SuperPointFast processor 
@@ -139,7 +139,9 @@ int main(int argc, char* argv[]) {
         // Create input queue item
         InputQueueItem item;
         item.index = count++;
+        item.timestamp = 0.0;  // Set a valid timestamp (required by ORB_SLAM3)
         item.image = img;
+        item.filename = img_path.filename().string();
         
         // Add to queue
         input_queue.enqueue(item);
@@ -161,12 +163,12 @@ int main(int argc, char* argv[]) {
     // Start consumer thread to process results
     std::thread consumer_thread([&output_queue, &output_folder]() {
       size_t result_count = 0;
-      std::vector<size_t> result_indices;
+      std::vector<int> result_indices;
 
-      std::vector<SuperPointResult> results;
+      std::vector<ResultQueueItem> results;
       auto start_time = std::chrono::high_resolution_clock::now();
       
-      SuperPointResult result;
+      ResultQueueItem result;
       while (output_queue.dequeue(result)) {
         result_count++;
         result_indices.push_back(result.index);
@@ -179,10 +181,10 @@ int main(int argc, char* argv[]) {
       for(auto& res : results) {
 
         // Use the original image stored in the result
-        cv::Mat result_img = res.img.clone();
+        cv::Mat result_img = res.image.clone();
         
         // Draw keypoints directly on the image
-        for (const auto& kp : res.keypoints_cv) {
+        for (const auto& kp : res.keypoints) {
           // Draw keypoint
           cv::circle(result_img, 
                     cv::Point(kp.pt.x, kp.pt.y), 
@@ -200,14 +202,14 @@ int main(int argc, char* argv[]) {
         cv::imwrite(output_filename, result_img);
 
         std::cout << " (index: " << res.index 
-        << ", keypoints: " << res.keypoints_cv.size() << ")" << std::endl;
+        << ", keypoints: " << res.keypoints.size() << ")" << std::endl;
       }
       
       // Check if result order matches input order
       std::cout << "Checking result order integrity..." << std::endl;
       bool is_ordered = true;
       for (size_t i = 0; i < result_indices.size(); ++i) {
-        if (i != result_indices[i]) {
+        if (static_cast<int>(i) != result_indices[i]) {
           std::cout << "Order mismatch at position " << i << ": found index " << result_indices[i] << std::endl;
           is_ordered = false;
         }
