@@ -2,24 +2,28 @@
 cmake_minimum_required(VERSION 3.10)
 project(SuperPointProject)
 
+# Set output directories for libraries and executables
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/lib)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pg")
-# set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pg")
+option(PROFILE "Build with profiling" OFF)
+if(PROFILE)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pg")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pg")
+endif()
+
+option(BUILD_EXAMPLES "Build examples" ON)
 
 set(GLOG_PATH "/root/glog_build/")
-
 set(CMAKE_PREFIX_PATH ${GLOG_PATH} ${CMAKE_PREFIX_PATH})
 find_package(Glog REQUIRED HINTS ${GLOG_PATH})
 
 # Find packages
-# set(OpenCV_DIR "/root/opencv_build/opencv/build") 
 find_package(OpenCV REQUIRED)
-# find_package(OpenCV 4.6.0 REQUIRED)
 find_package(VART 3.5.0 REQUIRED)
 find_package(UNILOG 3.5.0 REQUIRED)
 find_package(Glog 0.5.0 REQUIRED)
@@ -38,33 +42,40 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(include)
 
 set(MODEL
-    # src/SuperPoint.cpp 
-    # src/SuperPointSingleImp.cpp
     src/SuperPointFast.cpp
 )
 
+# Create FeatureIO library
 add_library(FeatureIO SHARED
     src/FeatureIO.cpp
 )
 
-# Link libraries for the FeatureIO library
+# Set output name and properties for FeatureIO
+set_target_properties(FeatureIO PROPERTIES
+    OUTPUT_NAME "FeatureIO"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/lib"
+)
+
 target_link_libraries(FeatureIO
     ${OpenCV_LIBS}
 )
 
-# Specify include directories for the FeatureIO library
 target_include_directories(FeatureIO PUBLIC
     ${OpenCV_INCLUDE_DIRS}
     ${PROJECT_SOURCE_DIR}/include
 )
 
-
-# Add the source files to the library
+# Create SuperPointLib library
 add_library(SuperPointLib SHARED
     ${MODEL}
 )
 
-# Link libraries for the SuperPointLib library
+# Set output name and properties for SuperPointLib
+set_target_properties(SuperPointLib PROPERTIES
+    OUTPUT_NAME "SuperPointLib"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/lib"
+)
+
 target_link_libraries(SuperPointLib
     ${OpenCV_LIBS}
     vart::runner
@@ -77,38 +88,19 @@ target_link_libraries(SuperPointLib
     vitis_ai_library::math
 )
 
+if(BUILD_EXAMPLES)
+    # Create executables
+    add_executable(demo src/demo_superpoint.cpp)
+    add_executable(demo_continuous src/demo_continuous.cpp)
+    add_executable(extract_features src/extract_features.cpp)
 
-add_executable(demo
-    src/demo_superpoint.cpp
-)
+    # Set output properties for executables
+    set_target_properties(demo demo_continuous extract_features PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
+    )
 
-# Add the continuous demo executable
-add_executable(demo_continuous
-    src/demo_continuous.cpp
-)
-
-# Add the feature extraction executable
-add_executable(extract_features
-    src/extract_features.cpp
-)
-
-# add_executable(test_performance
-#     ${MODEL}
-#     src/test_performance_superpoint.cpp
-# )
-
-# Link libraries for the demo executable
-target_link_libraries(demo
-    SuperPointLib
-)
-
-# Link libraries for the continuous demo executable
-target_link_libraries(demo_continuous
-    SuperPointLib
-)
-
-# Link libraries for the feature extraction executable
-target_link_libraries(extract_features
-    SuperPointLib
-    FeatureIO
-)
+    # Link libraries for executables
+    target_link_libraries(demo SuperPointLib)
+    target_link_libraries(demo_continuous SuperPointLib)
+    target_link_libraries(extract_features SuperPointLib FeatureIO)
+endif()
