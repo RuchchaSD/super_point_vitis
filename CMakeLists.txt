@@ -16,7 +16,7 @@ if(PROFILE)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pg")
 endif()
 
-option(BUILD_EXAMPLES "Build examples" OFF)
+option(BUILD_EXAMPLES "Build examples" ON)
 
 set(GLOG_PATH "/root/glog_build/")
 set(CMAKE_PREFIX_PATH ${GLOG_PATH} ${CMAKE_PREFIX_PATH})
@@ -70,6 +70,11 @@ target_link_libraries(SuperPointLib
 
 if(BUILD_EXAMPLES)
     message(STATUS "Building FeatureIO library - used for extract_features example")
+
+    add_library(FeatureIO SHARED
+        src/FeatureIO.cpp
+    )
+
     set_target_properties(FeatureIO PROPERTIES
         OUTPUT_NAME "FeatureIO"
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/lib"

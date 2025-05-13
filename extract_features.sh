@@ -11,7 +11,7 @@ source /etc/profile.d/pynq_venv.sh
 THREADS=${THREADS:-4}                        # Number of pre/post-processing threads
 MODEL=${MODEL:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/superpoint_tf.xmodel"}  # Model file name
 INPUT_DIR=${INPUT_DIR:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/temp/datasets/MH_01_easy/mav0/cam0/data"}  # Directory with input images
-OUTPUT_DIR=${OUTPUT_DIR:-"./feature_outputs/SP_TF"}       # Base directory for feature storage
+OUTPUT_DIR=${OUTPUT_DIR:-"/root/jupyter_notebooks/Fyp/datasets/feature_outputs/SP_TF"}       # Base directory for feature storage
 FILE_EXT=${FILE_EXT:-"png"}                  # File extension to filter input images
 
 # Create output directory if it doesn't exist
