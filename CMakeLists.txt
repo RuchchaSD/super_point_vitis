@@ -45,26 +45,6 @@ set(MODEL
     src/SuperPointFast.cpp
 )
 
-# Create FeatureIO library
-add_library(FeatureIO SHARED
-    src/FeatureIO.cpp
-)
-
-# Set output name and properties for FeatureIO
-set_target_properties(FeatureIO PROPERTIES
-    OUTPUT_NAME "FeatureIO"
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/lib"
-)
-
-target_link_libraries(FeatureIO
-    ${OpenCV_LIBS}
-)
-
-target_include_directories(FeatureIO PUBLIC
-    ${OpenCV_INCLUDE_DIRS}
-    ${PROJECT_SOURCE_DIR}/include
-)
-
 # Create SuperPointLib library
 add_library(SuperPointLib SHARED
     ${MODEL}
@@ -89,6 +69,20 @@ target_link_libraries(SuperPointLib
 )
 
 if(BUILD_EXAMPLES)
+    message(STATUS "Building FeatureIO library - used for extract_features example")
+    set_target_properties(FeatureIO PROPERTIES
+        OUTPUT_NAME "FeatureIO"
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/lib"
+    )
+
+    target_link_libraries(FeatureIO
+        ${OpenCV_LIBS}
+    )
+
+    target_include_directories(FeatureIO PUBLIC
+        ${OpenCV_INCLUDE_DIRS}
+        ${PROJECT_SOURCE_DIR}/include
+    )
 
     message(STATUS "Building examples")
     # Create executables
