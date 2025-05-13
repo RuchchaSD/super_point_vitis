@@ -16,7 +16,7 @@ if(PROFILE)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pg")
 endif()
 
-option(BUILD_EXAMPLES "Build examples" ON)
+option(BUILD_EXAMPLES "Build examples" OFF)
 
 set(GLOG_PATH "/root/glog_build/")
 set(CMAKE_PREFIX_PATH ${GLOG_PATH} ${CMAKE_PREFIX_PATH})
@@ -89,6 +89,8 @@ target_link_libraries(SuperPointLib
 )
 
 if(BUILD_EXAMPLES)
+
+    message(STATUS "Building examples")
     # Create executables
     add_executable(demo src/demo_superpoint.cpp)
     add_executable(demo_continuous src/demo_continuous.cpp)

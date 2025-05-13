@@ -404,7 +404,8 @@ ResultQueueItem SuperPointFast::process_result(const DpuInferenceResult& result)
         sp_result.keypoints.push_back(kp);
         
         // Keep the unscaled points for descriptor sampling
-        kps.push_back(std::make_pair(x, y));
+        // kps.push_back(std::make_pair(x, y));
+        kps.emplace_back(x, y);
     }
     
     // Descriptor extraction - use optimized bilinear sampling
