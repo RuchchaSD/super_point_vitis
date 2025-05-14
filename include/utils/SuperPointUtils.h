@@ -167,9 +167,9 @@ inline void nms_mask(std::vector<std::vector<int>>& grid, int x, int y, int dist
     int h = grid.size();
     int w = grid[0].size();
     for (int i = std::max(0, x - dist_thresh); i < std::min(h, x + dist_thresh + 1); ++i) {
-    for (int j = std::max(0, y - dist_thresh); j < std::min(w, y + dist_thresh + 1); ++j) {
-        grid[i][j] = -1;
-    }
+        for (int j = std::max(0, y - dist_thresh); j < std::min(w, y + dist_thresh + 1); ++j) {
+            grid[i][j] = -1;
+        }
     }
     grid[x][y] = 1;
 }
@@ -180,7 +180,7 @@ inline void nms_old(const std::vector<int>& xs, const std::vector<int>& ys, cons
     std::vector<std::pair<float, size_t>> order;
 
     //Check Here: Higher means more aggressive NMS
-    int dist_thresh = 3; // Helitha
+    int dist_thresh = 1; // Helitha
     // int dist_thresh = 4; // Xilinx
     for (size_t i = 0; i < ptscore.size(); ++i) {
     order.push_back({ptscore[i], i});

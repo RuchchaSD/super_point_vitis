@@ -23,7 +23,7 @@ SuperPointFast::SuperPointFast(const std::string& model_name, int num_threads)
     outputW = output_tensors[0].width;
     output2H = output_tensors[1].height;
     output2W = output_tensors[1].width;
-    conf_thresh = 0.007; // Helitha
+    conf_thresh = 0.006; // Helitha
     // conf_thresh = 0.015; // Xilinx
     
     scale0 = vitis::ai::library::tensor_scale(input_tensors_[0]);
@@ -315,10 +315,14 @@ ResultQueueItem SuperPointFast::process_result(const DpuInferenceResult& result)
     }
     __TOC__(HEATMAP)
 
+    if(std::getenv("DUMP_SUPERPOINT_THREADS") != nullptr){
+        std::cout << "Confidence threshold: " << conf_thresh << std::endl;
+    }
+
     // Keypoint detection
     __TIC__(SORT)
     vector<float> tmp;
-    // float max = 0, min = 0;
+    float max = 0, min = 0;
     tmp.reserve(reduced_size);
     vector<int> xs, ys;
     vector<size_t> keep_inds;
@@ -334,9 +338,11 @@ ResultQueueItem SuperPointFast::process_result(const DpuInferenceResult& result)
                         ys.push_back(m * 8 + i);
                         xs.push_back(n * 8 + j);
                         ptscore.push_back(tmp.back());
-                        // if (tmp.back() > max) {
-                        // max = tmp.back();
-                        // }
+                        if(std::getenv("DUMP_SUPERPOINT_THREADS") != nullptr){
+                            if (tmp.back() > max) {
+                            max = tmp.back();
+                            }
+                        }
                     }
                 }
             }
@@ -344,28 +350,30 @@ ResultQueueItem SuperPointFast::process_result(const DpuInferenceResult& result)
     }
     __TOC__(SORT)
 
+    if(std::getenv("DUMP_SUPERPOINT_THREADS") != nullptr){
+        max = 0.015;
+        const int num_bins = 10;
+        std::vector<int> histogram(num_bins, 0);
+        float bin_width = (max - min) / num_bins;
+        int total = 0;
 
-    // const int num_bins = 10;
-    // std::vector<int> histogram(num_bins, 0);
-    // float bin_width = (max - min) / num_bins;
-    // int total = 0;
-
-    // for (size_t i = 0; i < tmp.size(); ++i) {
-    //     if (tmp[i] > min && tmp[i] < max) {
-    //         int bin_index = static_cast<int>((tmp[i] - min) / bin_width);
-    //         if (bin_index >= 0 && bin_index < num_bins) {
-    //             histogram[bin_index]++;
-    //             total++;
-    //         }
-    //     }
-    // }
-    // std::cout << "Keypoint confidence score distribution:" << std::endl;
-    // std::cout << "Total keypoints: " << tmp.size() << ", Valid keypoints: " << ptscore.size() << std::endl;
-    // for (int i = 0; i < num_bins; ++i) {
-    //     float bin_start = min + i * bin_width;
-    //     float bin_end = bin_start + bin_width;
-    //     std::cout << "[" << std::fixed << std::setprecision(3) << bin_start << " - " << bin_end << "): " << histogram[i] << std::endl;
-    // }
+        for (size_t i = 0; i < tmp.size(); ++i) {
+            if (tmp[i] > min && tmp[i] < max) {
+                int bin_index = static_cast<int>((tmp[i] - min) / bin_width);
+                if (bin_index >= 0 && bin_index < num_bins) {
+                    histogram[bin_index]++;
+                    total++;
+                }
+            }
+        }
+        std::cout << "Keypoint confidence score distribution:" << std::endl;
+        std::cout << "Total keypoints: " << tmp.size() << ", Valid keypoints: " << ptscore.size() << std::endl;
+        for (int i = 0; i < num_bins; ++i) {
+            float bin_start = min + i * bin_width;
+            float bin_end = bin_start + bin_width;
+            std::cout << "[" << std::fixed << std::setprecision(3) << bin_start << " - " << bin_end << "): " << histogram[i] << std::endl;
+        }
+    }
 
     // NMS - using our optimized version
     __TIC__(NMS)
@@ -540,7 +548,6 @@ void SuperPointFast::run(ThreadSafeQueue<InputQueueItem>& input_queue, ThreadSaf
         // ─────────────── 2.  DPU-inference stage ───────────────
         std::thread dpu_thread([this, task_queue, result_queue]() 
         {
-            // Re-use the existing dpu_inference() helper but under our own lifetime.
             this->dpu_inference(*task_queue, *result_queue);
         });
 
