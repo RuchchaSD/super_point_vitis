@@ -180,8 +180,8 @@ inline void nms_old(const std::vector<int>& xs, const std::vector<int>& ys, cons
     std::vector<std::pair<float, size_t>> order;
 
     //Check Here: Higher means more aggressive NMS
-    // int dist_thresh = 3; // Helitha
-    int dist_thresh = 4; // Xilinx
+    int dist_thresh = 3; // Helitha
+    // int dist_thresh = 4; // Xilinx
     for (size_t i = 0; i < ptscore.size(); ++i) {
     order.push_back({ptscore[i], i});
     }
