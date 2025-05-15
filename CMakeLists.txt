@@ -105,15 +105,17 @@ if(BUILD_EXAMPLES)
     # Create executables
     add_executable(demo src/demo_superpoint.cpp)
     add_executable(demo_continuous src/demo_continuous.cpp)
+    add_executable(demo_ip_camera src/demo_ip_camera.cpp)
     add_executable(extract_features src/extract_features.cpp)
 
     # Set output properties for executables
-    set_target_properties(demo demo_continuous extract_features PROPERTIES
+    set_target_properties(demo demo_continuous demo_ip_camera extract_features PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
     )
 
     # Link libraries for executables
     target_link_libraries(demo SuperPointLib)
     target_link_libraries(demo_continuous SuperPointLib)
+    target_link_libraries(demo_ip_camera SuperPointLib)
     target_link_libraries(extract_features SuperPointLib FeatureIO)
 endif()
