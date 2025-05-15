@@ -10,6 +10,21 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/lib)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
+# Fetch CPR library
+include(FetchContent)
+FetchContent_Declare(
+    cpr
+    GIT_REPOSITORY https://github.com/libcpr/cpr.git
+    GIT_TAG 871ed52d350214a034f6ef8a3b8f51c5ce1bd400 # v1.9.0
+)
+
+# Fetch nlohmann/json
+FetchContent_Declare(
+    json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG v3.11.2
+)
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
@@ -35,6 +50,7 @@ set(CMAKE_PREFIX_PATH ${GLOG_PATH} ${CMAKE_PREFIX_PATH})
 find_package(Glog REQUIRED HINTS ${GLOG_PATH})
 
 # Find packages
+
 find_package(OpenCV REQUIRED)
 find_package(VART 3.5.0 REQUIRED)
 find_package(UNILOG 3.5.0 REQUIRED)
@@ -42,6 +58,8 @@ find_package(Glog 0.5.0 REQUIRED)
 find_package(Threads REQUIRED)
 find_package(XIR 3.5.0 REQUIRED)
 find_package(vitis_ai_library REQUIRED)
+FetchContent_MakeAvailable(cpr)
+FetchContent_MakeAvailable(json)
 
 message(STATUS "OpenCV version: ${OpenCV_VERSION}")
 message(STATUS "VART version: ${VART_VERSION}")
@@ -78,6 +96,8 @@ target_link_libraries(SuperPointLib
     Threads::Threads
     vitis_ai_library::dpu_task
     vitis_ai_library::math
+    cpr::cpr
+    nlohmann_json::nlohmann_json
 )
 
 if(BUILD_EXAMPLES)
@@ -107,9 +127,10 @@ if(BUILD_EXAMPLES)
     add_executable(demo_continuous src/demo_continuous.cpp)
     add_executable(demo_ip_camera src/demo_ip_camera.cpp)
     add_executable(extract_features src/extract_features.cpp)
+    add_executable(segment_image src/segmentImage.cpp)
 
     # Set output properties for executables
-    set_target_properties(demo demo_continuous demo_ip_camera extract_features PROPERTIES
+    set_target_properties(demo demo_continuous demo_ip_camera extract_features segment_image PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
     )
 
@@ -118,4 +139,5 @@ if(BUILD_EXAMPLES)
     target_link_libraries(demo_continuous SuperPointLib)
     target_link_libraries(demo_ip_camera SuperPointLib)
     target_link_libraries(extract_features SuperPointLib FeatureIO)
+    target_link_libraries(segment_image SuperPointLib)
 endif()
