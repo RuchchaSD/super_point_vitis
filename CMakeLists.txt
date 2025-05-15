@@ -71,34 +71,36 @@ message(STATUS "OpenCV version: ${OpenCV_VERSION}")
 include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(include)
 
-set(MODEL
-    src/SuperPointFast.cpp
-)
+# set(MODEL
+#     # src/SuperPointFast.cpp
+#     include/utils/ThreadSafeQueue.h
+#     include/utils/YOLOSegmenterClient.h
+# )
 
-# Create SuperPointLib library
-add_library(SuperPointLib SHARED
-    ${MODEL}
-)
+# # Create SuperPointLib library
+# add_library(SuperPointLib SHARED
+#     ${MODEL}
+# )
 
 # Set output name and properties for SuperPointLib
-set_target_properties(SuperPointLib PROPERTIES
-    OUTPUT_NAME "SuperPointLib"
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/lib"
-)
+# set_target_properties(SuperPointLib PROPERTIES
+#     OUTPUT_NAME "SuperPointLib"
+#     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/lib"
+# )
 
-target_link_libraries(SuperPointLib
-    ${OpenCV_LIBS}
-    # vart::runner
-    # vart::util
-    # xir::xir
-    # unilog::unilog
-    # glog::glog
-    # Threads::Threads
-    # vitis_ai_library::dpu_task
-    # vitis_ai_library::math
-    cpr::cpr
-    nlohmann_json::nlohmann_json
-)
+# target_link_libraries(SuperPointLib
+#     ${OpenCV_LIBS}
+#     # vart::runner
+#     # vart::util
+#     # xir::xir
+#     # unilog::unilog
+#     # glog::glog
+#     # Threads::Threads
+#     # vitis_ai_library::dpu_task
+#     # vitis_ai_library::math
+#     cpr::cpr
+#     nlohmann_json::nlohmann_json
+# )
 
 if(BUILD_EXAMPLES)
     message(STATUS "Building FeatureIO library - used for extract_features example")
@@ -143,5 +145,10 @@ if(BUILD_EXAMPLES)
     # target_link_libraries(demo_continuous SuperPointLib)
     # target_link_libraries(demo_ip_camera SuperPointLib)
     # target_link_libraries(extract_features SuperPointLib FeatureIO)
-    target_link_libraries(segment_image SuperPointLib)
+    target_link_libraries(segment_image 
+        ${OpenCV_LIBS}
+        cpr::cpr
+        nlohmann_json::nlohmann_json
+        Threads::Threads
+    )
 endif()
