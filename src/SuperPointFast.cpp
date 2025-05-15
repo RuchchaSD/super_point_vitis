@@ -510,8 +510,13 @@ void SuperPointFast::run(ThreadSafeQueue<InputQueueItem>& input_queue, ThreadSaf
     // If a previous run() is still alive, wait for it.
     if (pipeline_thread_.joinable()) pipeline_thread_.join();
 
+    // Create a shared_ptr to the Sequencer so it outlives this function
+    auto seq = std::make_shared<Sequencer<std::size_t,
+              ResultQueueItem,
+              ThreadSafeQueue<ResultQueueItem>>>(0, output_queue);
+
     // Launch the pipeline in its own thread so the caller regains control.
-    pipeline_thread_ = std::thread([this, &input_queue, &output_queue]()
+    pipeline_thread_ = std::thread([this, &input_queue, &output_queue, seq]()
     {
         // ───────────────  Stage-local queues  ───────────────
         auto task_queue   = std::make_shared<ThreadSafeQueue<DpuInferenceTask>>(20);
@@ -554,15 +559,11 @@ void SuperPointFast::run(ThreadSafeQueue<InputQueueItem>& input_queue, ThreadSaf
         // ─────────────── 3.  Post-processing stage ───────────────
         std::vector<std::thread> postproc_threads;
         for (int t = 0; t < num_threads_; ++t) {
-            postproc_threads.emplace_back([this, result_queue, &output_queue]() {
+            postproc_threads.emplace_back([this, result_queue, &seq]() {
                 DpuInferenceResult raw;
                 while (result_queue->dequeue(raw)) {
                     ResultQueueItem r = this->process_result(raw);
-                    if (!output_queue.is_shutdown()) {
-                        output_queue.enqueue(r);
-                    } else {
-                        throw std::runtime_error("Output queue should not be shutdowned by caller");
-                    }
+                    seq->push(r.index, std::move(r));
                 }
             });
         }
@@ -573,6 +574,7 @@ void SuperPointFast::run(ThreadSafeQueue<InputQueueItem>& input_queue, ThreadSaf
         dpu_thread.join();
         result_queue->shutdown();
         for (auto& th : postproc_threads) th.join();
+        seq->flush();
         output_queue.shutdown();               
         
     }

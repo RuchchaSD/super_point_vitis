@@ -28,6 +28,7 @@
 
 // Include the new modular header files
 #include "utils/ThreadSafeQueue.h"
+#include "utils/Sequencer.h"
 #include "utils/SuperPointTypes.h"
 #include "utils/SuperPointUtils.h"
 
