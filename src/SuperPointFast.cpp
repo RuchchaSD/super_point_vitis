@@ -169,8 +169,12 @@ void SuperPointFast::dpu_inference(ThreadSafeQueue<DpuInferenceTask>& task_queue
     // Launch one worker thread per DPU runner
     for (size_t i = 0; i < runners_.size(); ++i) {
         worker_threads.emplace_back([this, i, &task_queue, &result_queue]() {
+            
             auto& runner = runners_[i];
             int tasks_processed = 0;
+
+            auto input_tensors = runner->getInputTensor(0u);
+            auto output_tensors = sort_tensors(runner->getOutputTensor(0u), chans_);
             
             while (true) {
                 // Get next task from queue
@@ -178,9 +182,9 @@ void SuperPointFast::dpu_inference(ThreadSafeQueue<DpuInferenceTask>& task_queue
                 if (!task_queue.dequeue(task)) {
                     break;
                 }
+                __TIC__(DPU_INFERENCE_CYCLE)
 
                 // Prepare input tensor
-                auto input_tensors = runner->getInputTensor(0u);
                 int8_t* input_data = (int8_t*)input_tensors[0].get_data(0);
                 
                 // Copy input data efficiently
@@ -192,9 +196,6 @@ void SuperPointFast::dpu_inference(ThreadSafeQueue<DpuInferenceTask>& task_queue
                 __TIC__(DPU_RUN)
                 runner->run(0u);
                 __TOC__(DPU_RUN)
-
-                // Get output tensors
-                auto output_tensors = sort_tensors(runner->getOutputTensor(0u), chans_);
 
                 // Prepare result
                 DpuInferenceResult result;
@@ -227,6 +228,7 @@ void SuperPointFast::dpu_inference(ThreadSafeQueue<DpuInferenceTask>& task_queue
                 // Enqueue result for post-processing
                 result_queue.enqueue(result);
                 tasks_processed++;
+                __TOC__(DPU_INFERENCE_CYCLE)
             }
         });
     }
@@ -522,8 +524,8 @@ void SuperPointFast::run(ThreadSafeQueue<InputQueueItem>& input_queue, ThreadSaf
     pipeline_thread_ = std::thread([this, &input_queue, &output_queue, seq]()
     {
         // ───────────────  Stage-local queues  ───────────────
-        auto task_queue   = std::make_shared<ThreadSafeQueue<DpuInferenceTask>>(20);
-        auto result_queue = std::make_shared<ThreadSafeQueue<DpuInferenceResult>>(50);
+        auto task_queue   = std::make_shared<ThreadSafeQueue<DpuInferenceTask>>(1.25 * NUM_DPU_RUNNERS);
+        auto result_queue = std::make_shared<ThreadSafeQueue<DpuInferenceResult>>((int)(1.25 * num_threads_));
 
         // ─────────────── 1.  Pre-processing stage ───────────────
         std::vector<std::thread> preproc_threads;

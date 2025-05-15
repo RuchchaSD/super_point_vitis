@@ -91,8 +91,8 @@ class SuperPointFast {
     
 
     private:
-    static const int NUM_DPU_RUNNERS = 4;  // Fixed number of DPU runners
-    int num_threads_ = 4;  // Number of pre/post-processing threads
+    static const int NUM_DPU_RUNNERS = 2;  // Fixed number of DPU runners
+    int num_threads_ = 2;  // Number of pre/post-processing threads
     std::mutex results_mutex_;  // Mutex for synchronizing results access
     std::thread pipeline_thread_;
 
