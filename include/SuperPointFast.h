@@ -40,6 +40,9 @@
 DEF_ENV_PARAM(DEBUG_SUPERPOINT, "0");
 DEF_ENV_PARAM(DUMP_SUPERPOINT, "0");
 
+// External global atomic parameters (defined in SuperPointUtils.h and SuperPointFast.cpp)
+extern std::atomic<float> g_conf_thresh;
+
 using namespace std;
 using namespace cv;
 
@@ -112,7 +115,6 @@ class SuperPointFast {
     size_t outputW;
     size_t output2H;
     size_t output2W;
-    float conf_thresh;
     size_t outputSize1;
     size_t outputSize2;
 };

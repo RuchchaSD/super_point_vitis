@@ -6,7 +6,11 @@
 #include <numeric>
 #include <utility>
 #include <iostream>
+#include <atomic>
 #include <opencv2/core/core.hpp>
+
+// Global atomic variable for NMS distance threshold
+inline std::atomic<int> g_dist_thresh(2); // Default value = 2
 
 // L2 Normalization utility function
 inline void L2_normalization(const int8_t* input, float scale, int channel, int group, float* output) {
@@ -180,7 +184,7 @@ inline void nms_old(const std::vector<int>& xs, const std::vector<int>& ys, cons
     std::vector<std::pair<float, size_t>> order;
 
     //Check Here: Higher means more aggressive NMS
-    int dist_thresh = 2; // Helitha
+    int dist_thresh = g_dist_thresh.load(); // Use the atomic variable
     // int dist_thresh = 4; // Xilinx
     for (size_t i = 0; i < ptscore.size(); ++i) {
     order.push_back({ptscore[i], i});

@@ -2,6 +2,8 @@
 #include "SuperPointFast.h"
 #include <iomanip>
 
+// Global atomic variable for confidence threshold
+std::atomic<float> g_conf_thresh(0.015f); // Default value = 0.015 (middle of 0.0-0.03 range)
 
 // Implementation of SuperPointFast methods
 SuperPointFast::SuperPointFast(const std::string& model_name, int num_threads)
@@ -23,8 +25,7 @@ SuperPointFast::SuperPointFast(const std::string& model_name, int num_threads)
     outputW = output_tensors[0].width;
     output2H = output_tensors[1].height;
     output2W = output_tensors[1].width;
-    // conf_thresh = 0.006; // Helitha
-    conf_thresh = 0.010; // Xilinx
+    // conf_thresh is now using the global atomic variable
     
     scale0 = vitis::ai::library::tensor_scale(input_tensors_[0]);
 
@@ -315,8 +316,10 @@ ResultQueueItem SuperPointFast::process_result(const DpuInferenceResult& result)
     }
     __TOC__(HEATMAP)
 
+     float current_conf_thresh = g_conf_thresh.load(); // Use atomic variable
+
     if(std::getenv("DUMP_SUPERPOINT_THREADS") != nullptr){
-        std::cout << "Confidence threshold: " << conf_thresh << std::endl;
+        std::cout << "Confidence threshold: " << current_conf_thresh << std::endl;
     }
 
     // Keypoint detection
@@ -334,7 +337,7 @@ ResultQueueItem SuperPointFast::process_result(const DpuInferenceResult& result)
                     tmp.push_back(heatmap.at(i * 8 + j + (m * outputW + n) * 64));  // transpose heatmap
                     // std::cout << "KP Num: "<< i * 8 + j + (m * outputW + n) * 64 << " | reliability: " << tmp.back() << std::endl;
                     // allScores.push_back(tmp.back());
-                    if (tmp.back() > conf_thresh) {
+                    if (tmp.back() > current_conf_thresh) {
                         ys.push_back(m * 8 + i);
                         xs.push_back(n * 8 + j);
                         ptscore.push_back(tmp.back());
