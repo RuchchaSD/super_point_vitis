@@ -45,27 +45,27 @@ endif()
 
 option(BUILD_EXAMPLES "Build examples" ON)
 
-set(GLOG_PATH "/root/glog_build/")
-set(CMAKE_PREFIX_PATH ${GLOG_PATH} ${CMAKE_PREFIX_PATH})
-find_package(Glog REQUIRED HINTS ${GLOG_PATH})
+# set(GLOG_PATH "/root/glog_build/")
+# set(CMAKE_PREFIX_PATH ${GLOG_PATH} ${CMAKE_PREFIX_PATH})
+# find_package(Glog REQUIRED HINTS ${GLOG_PATH})
 
 # Find packages
 
 find_package(OpenCV REQUIRED)
-find_package(VART 3.5.0 REQUIRED)
-find_package(UNILOG 3.5.0 REQUIRED)
-find_package(Glog 0.5.0 REQUIRED)
+# find_package(VART 3.5.0 REQUIRED)
+# find_package(UNILOG 3.5.0 REQUIRED)
+# find_package(Glog 0.5.0 REQUIRED)
 find_package(Threads REQUIRED)
-find_package(XIR 3.5.0 REQUIRED)
-find_package(vitis_ai_library REQUIRED)
+# find_package(XIR 3.5.0 REQUIRED)
+# find_package(vitis_ai_library REQUIRED)
 FetchContent_MakeAvailable(cpr)
 FetchContent_MakeAvailable(json)
 
 message(STATUS "OpenCV version: ${OpenCV_VERSION}")
-message(STATUS "VART version: ${VART_VERSION}")
-message(STATUS "UNILOG version: ${UNILOG_VERSION}")
-message(STATUS "GLOG version: ${GLOG_VERSION}")
-message(STATUS "XIR version: ${XIR_VERSION}")
+# message(STATUS "VART version: ${VART_VERSION}")
+# message(STATUS "UNILOG version: ${UNILOG_VERSION}")
+# message(STATUS "GLOG version: ${GLOG_VERSION}")
+# message(STATUS "XIR version: ${XIR_VERSION}")
 
 # Include directories
 include_directories(${OpenCV_INCLUDE_DIRS})
@@ -88,14 +88,14 @@ set_target_properties(SuperPointLib PROPERTIES
 
 target_link_libraries(SuperPointLib
     ${OpenCV_LIBS}
-    vart::runner
-    vart::util
-    xir::xir
-    unilog::unilog
-    glog::glog
-    Threads::Threads
-    vitis_ai_library::dpu_task
-    vitis_ai_library::math
+    # vart::runner
+    # vart::util
+    # xir::xir
+    # unilog::unilog
+    # glog::glog
+    # Threads::Threads
+    # vitis_ai_library::dpu_task
+    # vitis_ai_library::math
     cpr::cpr
     nlohmann_json::nlohmann_json
 )
@@ -103,41 +103,45 @@ target_link_libraries(SuperPointLib
 if(BUILD_EXAMPLES)
     message(STATUS "Building FeatureIO library - used for extract_features example")
 
-    add_library(FeatureIO SHARED
-        src/FeatureIO.cpp
-    )
+    # add_library(FeatureIO SHARED
+    #     src/FeatureIO.cpp
+    # )
 
-    set_target_properties(FeatureIO PROPERTIES
-        OUTPUT_NAME "FeatureIO"
-        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/lib"
-    )
+    # set_target_properties(FeatureIO PROPERTIES
+    #     OUTPUT_NAME "FeatureIO"
+    #     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/lib"
+    # )
 
-    target_link_libraries(FeatureIO
-        ${OpenCV_LIBS}
-    )
+    # target_link_libraries(FeatureIO
+    #     ${OpenCV_LIBS}
+    # )
 
-    target_include_directories(FeatureIO PUBLIC
-        ${OpenCV_INCLUDE_DIRS}
-        ${PROJECT_SOURCE_DIR}/include
-    )
+    # target_include_directories(FeatureIO PUBLIC
+    #     ${OpenCV_INCLUDE_DIRS}
+    #     ${PROJECT_SOURCE_DIR}/include
+    # )
 
     message(STATUS "Building examples")
     # Create executables
-    add_executable(demo src/demo_superpoint.cpp)
-    add_executable(demo_continuous src/demo_continuous.cpp)
-    add_executable(demo_ip_camera src/demo_ip_camera.cpp)
-    add_executable(extract_features src/extract_features.cpp)
+    # add_executable(demo src/demo_superpoint.cpp)
+    # add_executable(demo_continuous src/demo_continuous.cpp)
+    # add_executable(demo_ip_camera src/demo_ip_camera.cpp)
+    # add_executable(extract_features src/extract_features.cpp)
     add_executable(segment_image src/segmentImage.cpp)
 
     # Set output properties for executables
-    set_target_properties(demo demo_continuous demo_ip_camera extract_features segment_image PROPERTIES
+    # set_target_properties(demo demo_continuous demo_ip_camera extract_features segment_image PROPERTIES
+    #     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
+    # )
+
+    set_target_properties(segment_image PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
     )
 
     # Link libraries for executables
-    target_link_libraries(demo SuperPointLib)
-    target_link_libraries(demo_continuous SuperPointLib)
-    target_link_libraries(demo_ip_camera SuperPointLib)
-    target_link_libraries(extract_features SuperPointLib FeatureIO)
+    # target_link_libraries(demo SuperPointLib)
+    # target_link_libraries(demo_continuous SuperPointLib)
+    # target_link_libraries(demo_ip_camera SuperPointLib)
+    # target_link_libraries(extract_features SuperPointLib FeatureIO)
     target_link_libraries(segment_image SuperPointLib)
 endif()
