@@ -20,9 +20,12 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 
-#include <vitis/ai/dpu_task.hpp>
+// Replace DPU Task with VART Runner headers
+#include <vart/runner.hpp>
+#include <vart/tensor_buffer.hpp>
+#include <xir/graph/graph.hpp>
+#include <xir/tensor/tensor.hpp>
 #include <vitis/ai/env_config.hpp>
-#include <vitis/ai/library/tensor.hpp>
 #include <vitis/ai/profiling.hpp>
 #include <vitis/ai/math.hpp>
 
@@ -46,18 +49,22 @@ extern std::atomic<float> g_conf_thresh;
 using namespace std;
 using namespace cv;
 
-static vector<vitis::ai::library::OutputTensor> sort_tensors(
-    const vector<vitis::ai::library::OutputTensor>& tensors,
-    vector<size_t>& chas) {
-  vector<vitis::ai::library::OutputTensor> ordered_tensors;
-  for (auto i = 0u; i < chas.size(); ++i)
-    for (auto j = 0u; j < tensors.size(); ++j)
-      if (tensors[j].channel == chas[i]) {
+// New function to sort output tensors based on channels
+static vector<const xir::Tensor*> sort_tensors(
+    const vector<const xir::Tensor*>& tensors,
+    vector<size_t>& channels) {
+  vector<const xir::Tensor*> ordered_tensors;
+  for (auto i = 0u; i < channels.size(); ++i)
+    for (auto j = 0u; j < tensors.size(); ++j) {
+      // Get tensor shape to check channel dimension
+      auto shape = tensors[j]->get_shape();
+      if (shape.size() >= 4 && shape[1] == channels[i]) {  // NCHW format
         ordered_tensors.push_back(tensors[j]);
         LOG_IF(INFO, ENV_PARAM(DEBUG_SUPERPOINT))
-          << "tensor name: " << tensors[j].name;
+          << "tensor name: " << tensors[j]->get_name();
         break;
       }
+    }
   return ordered_tensors;
 }
 
@@ -89,6 +96,8 @@ class SuperPointFast {
 
     ResultQueueItem process_result(const DpuInferenceResult& result);
     
+    // Helper function to get scale from tensor
+    float get_tensor_scale(const xir::Tensor* tensor);
 
     private:
     static const int NUM_DPU_RUNNERS = 2;  // Fixed number of DPU runners
@@ -96,10 +105,10 @@ class SuperPointFast {
     std::mutex results_mutex_;  // Mutex for synchronizing results access
     std::thread pipeline_thread_;
 
-
-    std::vector<std::unique_ptr<vitis::ai::DpuTask>> runners_;
+    // Replace DpuTask with VART Runner
+    std::vector<std::unique_ptr<vart::Runner>> runners_;
     std::vector<ResultQueueItem> results_;
-    std::vector<vitis::ai::library::InputTensor> input_tensors_;
+    std::vector<const xir::Tensor*> input_tensors_;
     vector<size_t> chans_;
 
     int sWidth;
@@ -107,7 +116,6 @@ class SuperPointFast {
     size_t batch_;
     // scale0 is the scale factor for the input tensor
     float scale0;
-
 
     size_t channel1;
     size_t channel2;

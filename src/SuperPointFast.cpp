@@ -1,52 +1,125 @@
 //SuperPointFast.cpp
 #include "SuperPointFast.h"
 #include <iomanip>
+#include <xir/graph/subgraph.hpp>
+#include <vart/tensor_buffer.hpp>
+#include <vart/runner_helper.hpp>
+#include <vart/runner.hpp>
 
 // Global atomic variable for confidence threshold
 std::atomic<float> g_conf_thresh(0.015f); // Default value = 0.015 (middle of 0.0-0.03 range)
+
+// Helper function to allocate CPU flat tensor buffer
+static std::unique_ptr<vart::TensorBuffer> alloc_cpu_flat_tensor_buffer(const xir::Tensor* tensor) {
+    return vart::alloc_cpu_flat_tensor_buffer(tensor);
+}
+
+// Helper function to get scale factor from tensor
+float SuperPointFast::get_tensor_scale(const xir::Tensor* tensor) {
+    // Get the scale from tensor attributes
+    float scale = 1.0f;
+    if (tensor->has_attr("scale")) {
+        scale = tensor->get_attr<float>("scale");
+    }
+    return scale;
+}
 
 // Implementation of SuperPointFast methods
 SuperPointFast::SuperPointFast(const std::string& model_name, int num_threads)
     : num_threads_(num_threads)
 {
-    // Always create exactly 4 DPU runners regardless of input parameter
-    for (int i = 0; i < NUM_DPU_RUNNERS; ++i) {
-        runners_.emplace_back(vitis::ai::DpuTask::create(model_name));
-    }
-    input_tensors_ = runners_[0]->getInputTensor(0u);
-    sWidth = input_tensors_[0].width;
-    sHeight = input_tensors_[0].height;
-    batch_ = input_tensors_[0].batch;
-    chans_ = {65,256};
-    auto output_tensors = sort_tensors(runners_[0]->getOutputTensor(0u), chans_);
-    channel1 = output_tensors[0].channel;
-    channel2 = output_tensors[1].channel;
-    outputH = output_tensors[0].height;
-    outputW = output_tensors[0].width;
-    output2H = output_tensors[1].height;
-    output2W = output_tensors[1].width;
-    // conf_thresh is now using the global atomic variable
+    // Load the model graph from xmodel file
+    auto graph = xir::Graph::deserialize(model_name);
+    auto root_subgraph = graph->get_root_subgraph();
+    auto subgraphs = root_subgraph->children_topological_sort();
     
-    scale0 = vitis::ai::library::tensor_scale(input_tensors_[0]);
+    // Filter for DPU subgraphs only
+    auto dpu_subgraphs = std::vector<const xir::Subgraph*>();
+    for (auto subgraph : subgraphs) {
+        if (subgraph->has_attr("device") &&
+            subgraph->get_attr<std::string>("device") == "DPU") {
+            dpu_subgraphs.push_back(subgraph);
+        }
+    }
+    
+    if (dpu_subgraphs.empty()) {
+        throw std::runtime_error("No DPU subgraphs found in the model");
+    }
 
+    // Create DPU runner instances
+    for (int i = 0; i < NUM_DPU_RUNNERS; ++i) {
+        runners_.emplace_back(vart::Runner::create_runner(dpu_subgraphs[0], "run"));
+    }
+    
+    // Get input tensors
+    auto input_tensors = runners_[0]->get_input_tensors();
+    if (input_tensors.empty()) {
+        throw std::runtime_error("No input tensors in model");
+    }
+    
+    input_tensors_ = input_tensors;
+    
+    // Get input dimensions
+    auto in_dims = input_tensors[0]->get_shape();
+    batch_ = in_dims[0];
+    // NCHW format: in_dims = [batch, channel, height, width]
+    sHeight = in_dims[2];
+    sWidth = in_dims[3];
+    
+    // Expected output channels
+    chans_ = {65, 256};
+    
+    // Get output tensors and sort them
+    auto output_tensors = sort_tensors(runners_[0]->get_output_tensors(), chans_);
+    if (output_tensors.size() < 2) {
+        throw std::runtime_error("Expected at least 2 output tensors");
+    }
+    
+    // Get output tensor dimensions
+    auto out_dims1 = output_tensors[0]->get_shape();
+    auto out_dims2 = output_tensors[1]->get_shape();
+    
+    channel1 = out_dims1[1]; // NCHW format
+    channel2 = out_dims2[1];
+    outputH = out_dims1[2];
+    outputW = out_dims1[3];
+    output2H = out_dims2[2];
+    output2W = out_dims2[3];
+    
+    // Get scale for input tensor
+    scale0 = get_tensor_scale(input_tensors[0]);
+    
     LOG_IF(INFO, ENV_PARAM(DEBUG_SUPERPOINT)) 
-    << "tensor1 info : " << output_tensors[0].height << " " << output_tensors[0].width  << " " << output_tensors[0].channel << endl
-    << "tensor2 info : " << output_tensors[1].height << " " << output_tensors[1].width  << " " << output_tensors[1].channel << endl;
-
-    outputSize1 = output_tensors[0].channel * output_tensors[0].height * output_tensors[0].width;
-    outputSize2 = output_tensors[1].channel * output_tensors[1].height * output_tensors[1].width;
+        << "tensor1 info : " << outputH << " " << outputW << " " << channel1 << endl
+        << "tensor2 info : " << output2H << " " << output2W << " " << channel2 << endl;
+    
+    outputSize1 = channel1 * outputH * outputW;
+    outputSize2 = channel2 * output2H * output2W;
 }
 
 SuperPointFast::~SuperPointFast() {
     if (pipeline_thread_.joinable()) pipeline_thread_.join();
 }
 
-size_t SuperPointFast::get_input_batch() { return runners_[0]->get_input_batch(0, 0); }
-int SuperPointFast::getInputWidth() const {
-    return runners_[0]->getInputTensor(0u)[0].width;
+size_t SuperPointFast::get_input_batch() { 
+    if (!input_tensors_.empty()) {
+        return input_tensors_[0]->get_shape()[0]; 
+    }
+    return 1; // Default
 }
+
+int SuperPointFast::getInputWidth() const {
+    if (!input_tensors_.empty()) {
+        return input_tensors_[0]->get_shape()[3]; // NCHW format
+    }
+    return sWidth;
+}
+
 int SuperPointFast::getInputHeight() const {
-    return runners_[0]->getInputTensor(0u)[0].height;
+    if (!input_tensors_.empty()) {
+        return input_tensors_[0]->get_shape()[2]; // NCHW format
+    }
+    return sHeight;
 }
 
 // Pre-processing thread function
@@ -173,8 +246,8 @@ void SuperPointFast::dpu_inference(ThreadSafeQueue<DpuInferenceTask>& task_queue
             auto& runner = runners_[i];
             int tasks_processed = 0;
 
-            auto input_tensors = runner->getInputTensor(0u);
-            auto output_tensors = sort_tensors(runner->getOutputTensor(0u), chans_);
+            auto input_tensors = runner->get_input_tensors();
+            auto output_tensors = sort_tensors(runner->get_output_tensors(), chans_);
             
             while (true) {
                 // Get next task from queue
@@ -184,51 +257,87 @@ void SuperPointFast::dpu_inference(ThreadSafeQueue<DpuInferenceTask>& task_queue
                 }
                 __TIC__(DPU_INFERENCE_CYCLE)
 
-                // Prepare input tensor
-                int8_t* input_data = (int8_t*)input_tensors[0].get_data(0);
+                // Create input and output buffers using RAII for proper cleanup
+                std::vector<std::unique_ptr<vart::TensorBuffer>> owned_input_buffers;
+                std::vector<std::unique_ptr<vart::TensorBuffer>> owned_output_buffers;
+                std::vector<vart::TensorBuffer*> input_buffers, output_buffers;
                 
-                // Copy input data efficiently
-                __TIC__(MEMCOPY_INPUT)
-                std::memcpy(input_data, task.input_data.data(), task.input_data.size());
-                __TOC__(MEMCOPY_INPUT)
-
-                // Run DPU inference
-                __TIC__(DPU_RUN)
-                runner->run(0u);
-                __TOC__(DPU_RUN)
-
-                // Prepare result
-                DpuInferenceResult result;
-                result.index = task.index;
-                result.timestamp = task.timestamp;
-                result.img = task.img;
-                result.filename = task.filename;
-                result.scale_w = task.scale_w;
-                result.scale_h = task.scale_h;
-
-                // Copy output tensors efficiently
-                __TIC__(MEMCOPY_OUTPUT)
-                int8_t* out1 = (int8_t*)output_tensors[0].get_data(0);
-                int8_t* out2 = (int8_t*)output_tensors[1].get_data(0);
-
-                size_t size1 = output_tensors[0].size / output_tensors[0].batch;
-                size_t size2 = output_tensors[1].size / output_tensors[1].batch;
-
-                result.output_data1.resize(size1);
-                result.output_data2.resize(size2);
-                
-                std::memcpy(result.output_data1.data(), out1, size1);
-                std::memcpy(result.output_data2.data(), out2, size2);
-                __TOC__(MEMCOPY_OUTPUT)
-
-                // Get output scales
-                result.scale1 = vitis::ai::library::tensor_scale(output_tensors[0]);
-                result.scale2 = vitis::ai::library::tensor_scale(output_tensors[1]);
-
-                // Enqueue result for post-processing
-                result_queue.enqueue(result);
-                tasks_processed++;
+                try {
+                    // Allocate CPU tensor buffers for input
+                    auto input_buffer = vart::alloc_cpu_flat_tensor_buffer(input_tensors[0]);
+                    input_buffers.push_back(input_buffer.get());
+                    owned_input_buffers.push_back(std::move(input_buffer));
+                    
+                    // Allocate CPU tensor buffers for output
+                    for (auto tensor : output_tensors) {
+                        auto buffer = vart::alloc_cpu_flat_tensor_buffer(tensor);
+                        output_buffers.push_back(buffer.get());
+                        owned_output_buffers.push_back(std::move(buffer));
+                    }
+                    
+                    // Get input data buffer
+                    auto input_buffer_data = vart::get_tensor_buffer_data(input_buffers[0], 0);
+                    int8_t* input_data = static_cast<int8_t*>(input_buffer_data.data);
+                    
+                    // Copy input data efficiently
+                    __TIC__(MEMCOPY_INPUT)
+                    std::memcpy(input_data, task.input_data.data(), task.input_data.size());
+                    // Sync for write
+                    input_buffers[0]->sync_for_write(0, task.input_data.size());
+                    __TOC__(MEMCOPY_INPUT)
+                    
+                    // Run DPU inference (async)
+                    __TIC__(DPU_RUN)
+                    auto job_id = runner->execute_async(input_buffers, output_buffers);
+                    runner->wait(job_id.first, -1);  // Wait for completion (-1 = wait forever)
+                    __TOC__(DPU_RUN)
+                    
+                    // Prepare result
+                    DpuInferenceResult result;
+                    result.index = task.index;
+                    result.timestamp = task.timestamp;
+                    result.img = task.img;
+                    result.filename = task.filename;
+                    result.scale_w = task.scale_w;
+                    result.scale_h = task.scale_h;
+                    
+                    // Copy output tensors efficiently
+                    __TIC__(MEMCOPY_OUTPUT)
+                    // Sync for read
+                    for (size_t j = 0; j < output_buffers.size(); ++j) {
+                        output_buffers[j]->sync_for_read(0, output_buffers[j]->get_tensor()->get_data_size());
+                    }
+                    
+                    // Get output tensor data
+                    auto output_buffer_data1 = vart::get_tensor_buffer_data(output_buffers[0], 0);
+                    auto output_buffer_data2 = vart::get_tensor_buffer_data(output_buffers[1], 0);
+                    
+                    int8_t* out1 = static_cast<int8_t*>(output_buffer_data1.data);
+                    int8_t* out2 = static_cast<int8_t*>(output_buffer_data2.data);
+                    
+                    size_t size1 = output_buffer_data1.size;
+                    size_t size2 = output_buffer_data2.size;
+                    
+                    result.output_data1.resize(size1);
+                    result.output_data2.resize(size2);
+                    
+                    std::memcpy(result.output_data1.data(), out1, size1);
+                    std::memcpy(result.output_data2.data(), out2, size2);
+                    __TOC__(MEMCOPY_OUTPUT)
+                    
+                    // Get output scales
+                    result.scale1 = get_tensor_scale(output_tensors[0]);
+                    result.scale2 = get_tensor_scale(output_tensors[1]);
+                    
+                    // Enqueue result for post-processing
+                    result_queue.enqueue(result);
+                    tasks_processed++;
+                } catch (const std::exception& e) {
+                    LOG(ERROR) << "Error in DPU inference: " << e.what();
+                }
                 __TOC__(DPU_INFERENCE_CYCLE)
+                
+                // Tensor buffers are automatically cleaned up by unique_ptr when they go out of scope
             }
         });
     }
