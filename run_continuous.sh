@@ -10,7 +10,7 @@ source debug.sh
 # Allows easy configuration of SuperPoint continuous demo execution parameters
 
 # Default values (can be changed below or passed as environment variables)
-THREADS=${THREADS:-4}                        # Number of pre/post-processing threads
+THREADS=${THREADS:-2}                        # Number of pre/post-processing threads
 # MODEL=${MODEL:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/superpoint_tf.xmodel"}  # Model file name
 MODEL=${MODEL:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/compiled_SP_by_H.xmodel"}  # Model file name
 INPUT_DIR=${INPUT_DIR:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/temp/imgs"}  # Directory with input images
