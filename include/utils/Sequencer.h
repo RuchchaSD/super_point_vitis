@@ -42,7 +42,7 @@ public:
             pending_.erase(pending_.begin());
             ++next_;
         }
-        // optional:  cv_.notify_all();  // if a waiter cares
+        cv_.notify_all();  // if a waiter cares
     }
 
     /** Block the caller until every index ≤ max_index is flushed. */
@@ -64,6 +64,8 @@ public:
         lk.lock();
         ++next_;                                          // advance in sequence
         }
+
+        cv_.notify_all();
     }
 
 private:
