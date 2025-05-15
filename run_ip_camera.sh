@@ -6,6 +6,9 @@ source /etc/profile.d/pynq_venv.sh
 
 source debug.sh
 
+# export USE_SEGMENTATION_MASK=1
+# SEGMENTER_URL="http://192.248.10.70:8000/segment"
+
 # SuperPoint IP Camera Processing Demo Runner Script
 # Allows easy configuration and execution of SuperPoint IP camera demo
 

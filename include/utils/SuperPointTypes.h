@@ -47,6 +47,7 @@ struct DpuInferenceTask {
     std::vector<int8_t> input_data;
     float scale_w;
     float scale_h;
+    std::future<cv::Mat> mask_future;  // Future for asynchronous mask retrieval
 };
 
 struct DpuInferenceResult {
@@ -60,6 +61,7 @@ struct DpuInferenceResult {
     float scale_h;
     float scale1;
     float scale2;
+    cv::Mat mask;  // Store the actual mask instead of future
 };
 
 // SuperPointResult is now deprecated, use ResultQueueItem instead

@@ -6,6 +6,10 @@ source /etc/profile.d/pynq_venv.sh
 
 source debug.sh
 
+export DEBUG_SEGMENT=1
+export USE_SEGMENTATION_MASK=1
+SEGMENTER_URL="http://192.248.10.70:8000/segment"
+
 # SuperPoint Continuous Processing Demo Runner Script
 # Allows easy configuration of SuperPoint continuous demo execution parameters
 
@@ -13,7 +17,7 @@ source debug.sh
 THREADS=${THREADS:-4}                        # Number of pre/post-processing threads
 # MODEL=${MODEL:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/superpoint_tf.xmodel"}  # Model file name
 MODEL=${MODEL:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/compiled_SP_by_H.xmodel"}  # Model file name
-INPUT_DIR=${INPUT_DIR:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/temp/imgs"}  # Directory with input images
+INPUT_DIR=${INPUT_DIR:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/temp/img"}  # Directory with input images
 OUTPUT_DIR=${OUTPUT_DIR:-"./results/continuous"}  # Directory to store results
 FILE_EXT=${FILE_EXT:-"png"}                  # File extension to filter input images
 

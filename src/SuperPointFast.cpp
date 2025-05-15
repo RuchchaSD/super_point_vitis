@@ -35,6 +35,20 @@ SuperPointFast::SuperPointFast(const std::string& model_name, int num_threads)
 
     outputSize1 = output_tensors[0].channel * output_tensors[0].height * output_tensors[0].width;
     outputSize2 = output_tensors[1].channel * output_tensors[1].height * output_tensors[1].width;
+    
+    // Initialize segmenter with default URL (can be changed via environment variable)
+    segmenter_url_ = std::getenv("SEGMENTER_URL") ? 
+                    std::getenv("SEGMENTER_URL") : 
+                    "http://192.248.10.70:8000/segment";
+    use_segmentation_mask_ = std::getenv("USE_SEGMENTATION_MASK") ? 
+                           std::stoi(std::getenv("USE_SEGMENTATION_MASK")) > 0 : 
+                           false;
+    
+    if (use_segmentation_mask_) {
+        segmenter_ = std::make_unique<YOLOSegmenterClient>(segmenter_url_);
+        LOG_IF(INFO, ENV_PARAM(DEBUG_SUPERPOINT)) 
+            << "Segmentation masking enabled with URL: " << segmenter_url_;
+    }
 }
 
 SuperPointFast::~SuperPointFast() {
@@ -123,6 +137,13 @@ DpuInferenceTask SuperPointFast::pre_process_image(InputQueueItem inputItem)
     task.img = inputItem.image;
     task.filename = inputItem.filename;
 
+    // Request segmentation mask asynchronously if enabled
+    if (use_segmentation_mask_ && segmenter_) {
+        LOG_IF(INFO, ENV_PARAM(DEBUG_SUPERPOINT)) 
+            << "Requesting segmentation mask for image " << task.index;
+        task.mask_future = segmenter_->fetchMasksAsync(task.img);
+    }
+
     auto img = inputItem.image;
 
     // Resize image if needed
@@ -205,6 +226,16 @@ void SuperPointFast::dpu_inference(ThreadSafeQueue<DpuInferenceTask>& task_queue
                 result.scale_w = task.scale_w;
                 result.scale_h = task.scale_h;
 
+                // Get mask from future if available
+                if (use_segmentation_mask_ && task.mask_future.valid()) {
+                    try {
+                        result.mask = task.mask_future.get();
+                    } catch (const std::exception& e) {
+                        LOG_IF(ERROR, ENV_PARAM(DEBUG_SUPERPOINT)) 
+                            << "Failed to get segmentation mask: " << e.what();
+                    }
+                }
+
                 // Copy output tensors efficiently
                 __TIC__(MEMCOPY_OUTPUT)
                 int8_t* out1 = (int8_t*)output_tensors[0].get_data(0);
@@ -277,6 +308,22 @@ ResultQueueItem SuperPointFast::process_result(const DpuInferenceResult& result)
     sp_result.image = result.img;
     sp_result.filename = result.filename;
 
+    // Get segmentation mask if available
+    cv::Mat mask;
+    bool use_mask = false;
+    
+    if (use_segmentation_mask_ && !result.mask.empty()) {
+        mask = result.mask;
+        // Ensure mask has the same dimensions as the image
+        if (mask.rows != result.img.rows || mask.cols != result.img.cols) {
+            cv::resize(mask, mask, result.img.size(), 0, 0, cv::INTER_NEAREST);
+        }
+        use_mask = true;
+        LOG_IF(INFO, ENV_PARAM(DEBUG_SUPERPOINT)) 
+            << "Using mask for keypoint filtering with " 
+            << cv::countNonZero(mask) << " masked pixels";
+    }
+
     // Post-processing steps
     const int8_t* out1 = result.output_data1.data();
     const int8_t* out2 = result.output_data2.data();
@@ -316,10 +363,16 @@ ResultQueueItem SuperPointFast::process_result(const DpuInferenceResult& result)
     }
     __TOC__(HEATMAP)
 
-     float current_conf_thresh = g_conf_thresh.load(); // Use atomic variable
+    float current_conf_thresh = g_conf_thresh.load(); // Use atomic variable
 
     if(std::getenv("DUMP_SUPERPOINT_THREADS") != nullptr){
         std::cout << "Confidence threshold: " << current_conf_thresh << std::endl;
+    }
+
+    // Prepare scaled mask for keypoint filtering if needed
+    cv::Mat scaled_mask;
+    if (use_mask) {
+        cv::resize(mask, scaled_mask, cv::Size(sWidth, sHeight), 0, 0, cv::INTER_NEAREST);
     }
 
     // Keypoint detection
@@ -330,20 +383,29 @@ ResultQueueItem SuperPointFast::process_result(const DpuInferenceResult& result)
     vector<int> xs, ys;
     vector<size_t> keep_inds;
     vector<float> ptscore;
+    
     for (size_t m = 0u; m < outputH; ++m) {
         for (size_t i = 0u; i < 8; ++i) {
             for (size_t n = 0u; n < outputW; ++n) {
                 for (size_t j = 0u; j < 8; ++j) {
                     tmp.push_back(heatmap.at(i * 8 + j + (m * outputW + n) * 64));  // transpose heatmap
-                    // std::cout << "KP Num: "<< i * 8 + j + (m * outputW + n) * 64 << " | reliability: " << tmp.back() << std::endl;
-                    // allScores.push_back(tmp.back());
+                    
                     if (tmp.back() > current_conf_thresh) {
-                        ys.push_back(m * 8 + i);
-                        xs.push_back(n * 8 + j);
+                        int y_pos = m * 8 + i;
+                        int x_pos = n * 8 + j;
+                        
+                        // Skip points that fall within masked areas if mask is available
+                        if (use_mask && scaled_mask.at<uchar>(y_pos, x_pos) > 0) {
+                            continue; // Skip this keypoint as it falls in a masked area
+                        }
+                        
+                        ys.push_back(y_pos);
+                        xs.push_back(x_pos);
                         ptscore.push_back(tmp.back());
+                        
                         if(std::getenv("DUMP_SUPERPOINT_THREADS") != nullptr){
                             if (tmp.back() > max) {
-                            max = tmp.back();
+                                max = tmp.back();
                             }
                         }
                     }

@@ -31,6 +31,7 @@
 #include "utils/Sequencer.h"
 #include "utils/SuperPointTypes.h"
 #include "utils/SuperPointUtils.h"
+#include "utils/YOLOSegmenterClient.h"  // Added for segmentation masks
 
 #define HW_SOFTMAX
 #ifdef __ARM_NEON
@@ -96,6 +97,10 @@ class SuperPointFast {
     std::mutex results_mutex_;  // Mutex for synchronizing results access
     std::thread pipeline_thread_;
 
+    // Segmentation mask support
+    std::unique_ptr<YOLOSegmenterClient> segmenter_;
+    std::string segmenter_url_;
+    bool use_segmentation_mask_;
 
     std::vector<std::unique_ptr<vitis::ai::DpuTask>> runners_;
     std::vector<ResultQueueItem> results_;

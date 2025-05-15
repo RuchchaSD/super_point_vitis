@@ -10,7 +10,7 @@ source debug.sh
 # Allows easy configuration and execution of segmentation benchmarking
 
 # Default values (can be changed below or passed as environment variables)
-IMAGE_PATH=${IMAGE_PATH:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/temp/img/GettyImages-496309064.jpg"}  # Default test image path
+IMAGE_PATH=${IMAGE_PATH:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/temp/img/GettyImages-496309064_resized.jpg"}  # Default test image path
 SERVER_URL=${SERVER_URL:-"http://192.248.10.70:8000/segment"}  # Default segmentation server URL
 ITERATIONS=${ITERATIONS:-100}                       # Number of iterations for benchmarking
 DEBUG=${DEBUG:-0}                                  # Enable debug output (0=off, 1=on)

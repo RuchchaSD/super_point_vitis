@@ -3,7 +3,7 @@
 set -e  # Exit immediately if a command exits with a non-zero status
 
 source /etc/profile.d/pynq_venv.sh
-
+export DEBUG_SEGMENT=1
 # SuperPoint Demo Runner Script
 # Allows easy configuration of SuperPoint demo execution parameters
 
@@ -12,7 +12,7 @@ IMPLEMENTATION=${IMPLEMENTATION:-"multi"}  # "single" or "multi"
 RUNNERS=${RUNNERS:-10}                      # Number of DPU runners (only used with multi-threaded)
 ITERATIONS=${ITERATIONS:-100}                # Number of inference iterations to run
 MODEL=${MODEL:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/compiled_SP_by_H.xmodel"}     # Model file name
-IMAGE=${IMAGE:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/temp/imgs/1403636669163555584.png"}                 # Input image file name
+IMAGE=${IMAGE:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/temp/img/GettyImages-496309064_resized.jpg"}                 # Input image file name
 OUTPUT_DIR=${OUTPUT_DIR:-"./results"}      # Directory to store results
 
 # Print configured values
