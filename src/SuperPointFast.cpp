@@ -3,7 +3,7 @@
 #include <iomanip>
 
 // Global atomic variable for confidence threshold
-std::atomic<float> g_conf_thresh(0.015f); // Default value = 0.015 (middle of 0.0-0.03 range)
+std::atomic<float> g_conf_thresh(0.005f); // Default value = 0.015 (middle of 0.0-0.03 range)
 
 // Implementation of SuperPointFast methods
 SuperPointFast::SuperPointFast(const std::string& model_name, int num_threads)
