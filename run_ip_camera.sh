@@ -12,9 +12,9 @@ source debug.sh
 # Default values (can be changed below or passed as environment variables)
 THREADS=${THREADS:-2}                        # Number of pre/post-processing threads
 MODEL=${MODEL:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/compiled_SP_by_H.xmodel"}  # Model file name
-IP_ADDRESS=${IP_ADDRESS:-"192.168.1.145"}    # IP address of the camera stream
+IP_ADDRESS=${IP_ADDRESS:-"192.168.8.111"}    # IP address of the camera stream
 PORT=${PORT:-"8080"}                         # Port of the camera stream 
-FPS=${FPS:-"30"}                             # Target FPS for frame capture
+FPS=${FPS:-"20"}                             # Target FPS for frame capture
 PROTOCOL=${PROTOCOL:-"rtsp"}                 # Protocol for video streaming (rtsp, http, etc.)
 CAMERA_FPS=${CAMERA_FPS:-"30"}               # Actual camera FPS (default: 30)
 
