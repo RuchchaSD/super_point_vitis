@@ -35,11 +35,11 @@ void on_dist_thresh_change(int pos, void*) {
 }
 
 void print_usage(char* prog_name) {
-  std::cout << "Usage: " << prog_name << " [options] model_name ip_address port fps protocol" << std::endl;
+  std::cout << "Usage: " << prog_name << " [options] model_name ip_address port fps protocol [camera_fps]" << std::endl;
   std::cout << "Options:" << std::endl;
   std::cout << "  -t <num>      Number of preprocessing/postprocessing threads to use (default: 2)" << std::endl;
   std::cout << "                Note: DPU runners fixed at 4" << std::endl;
-  std::cout << "Example: " << prog_name << " -t 4 superpoint_tf.xmodel 192.168.1.100 8554 30 rtsp" << std::endl;
+  std::cout << "Example: " << prog_name << " -t 4 superpoint_tf.xmodel 192.168.1.100 8554 30 rtsp 30" << std::endl;
 }
 
 int main(int argc, char* argv[]) {
@@ -50,6 +50,7 @@ int main(int argc, char* argv[]) {
   int port = 0;
   int target_fps = 30;
   std::string protocol = "rtsp";  // Default protocol
+  int camera_fps = 30;            // Default camera FPS
   
   // Parse command line arguments
   int arg_index = 1;
@@ -79,6 +80,11 @@ int main(int argc, char* argv[]) {
     port = std::stoi(argv[arg_index + 2]);
     target_fps = std::stoi(argv[arg_index + 3]);
     protocol = argv[arg_index + 4];
+    
+    // Check if camera_fps is provided as an argument
+    if (arg_index + 5 < argc) {
+      camera_fps = std::stoi(argv[arg_index + 5]);
+    }
   } else {
     std::cerr << "Error: Missing required positional arguments" << std::endl;
     print_usage(argv[0]);
@@ -93,6 +99,7 @@ int main(int argc, char* argv[]) {
   std::cout << "- Port: " << port << std::endl;
   std::cout << "- Target FPS: " << target_fps << std::endl;
   std::cout << "- Protocol: " << protocol << std::endl;
+  std::cout << "- Camera FPS: " << camera_fps << std::endl;
 
   try {
     // Initialize SuperPointFast
@@ -129,7 +136,7 @@ int main(int argc, char* argv[]) {
                       &dist_thresh_trackbar, 10, on_dist_thresh_change);
     
     // Start producer thread to capture frames from IP camera
-    std::thread producer_thread([stream_url, &input_queue, target_fps, protocol]() {
+    std::thread producer_thread([stream_url, &input_queue, target_fps, protocol, camera_fps]() {
       // Open video stream
       cv::VideoCapture cap(stream_url);
       if (!cap.isOpened()) {
@@ -137,10 +144,18 @@ int main(int argc, char* argv[]) {
         input_queue.shutdown();
         return;
       }
-      
       size_t frame_idx = 0;
       size_t frames_dropped = 0;
       auto last_frame_time = std::chrono::high_resolution_clock::now();
+      int flush_fps = camera_fps - target_fps;
+      float flush_ratio;
+
+      if (flush_fps > 0) {
+        flush_ratio = (float)flush_fps / (float)camera_fps;
+      } else {
+        flush_ratio = 0.0;
+      }
+      float flush_counter = 0.0;
       
       while (true) {
         // Calculate time since last frame
@@ -158,18 +173,32 @@ int main(int argc, char* argv[]) {
         
         // Capture frame
         cv::Mat frame;
-        cap >> frame;
         
-        if (frame.empty()) {
-            //try once more
-            std::this_thread::sleep_for(std::chrono::seconds(frame_time_ms / 4));
-            cap >> frame;
+        // Clear the buffer and get the most recent frame
+        // First, set buffer size to 1 to minimize buffering
+        cap.set(cv::CAP_PROP_BUFFERSIZE, 1);
+        
+        // Flush any existing frames in the buffer
+        flush_counter += flush_ratio;
+        if(flush_counter >= 1.0) {
+          cap.grab();
+          flush_counter -= 1.0;
+          flush_counter += flush_ratio;
+        }
+
+        
+        // Now retrieve the latest frame
+        if (!cap.read(frame)) {
             if (frame.empty()) {
-              std::cerr << "End of stream or error in video capture" << std::endl;
-              break;
+                //try once more
+                std::this_thread::sleep_for(std::chrono::seconds(frame_time_ms / 4));
+                cap >> frame;
+                if (frame.empty()) {
+                  std::cerr << "End of stream or error in video capture" << std::endl;
+                  break;
+                }
             }
         }
-        
         // Create input queue item
         InputQueueItem item;
         item.index = frame_idx++;
