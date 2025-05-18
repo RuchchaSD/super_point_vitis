@@ -6,8 +6,8 @@ source /etc/profile.d/pynq_venv.sh
 
 source debug.sh
 
-# export USE_SEGMENTATION_MASK=1
-# SEGMENTER_URL="http://192.248.10.70:8000/segment"
+export USE_SEGMENTATION_MASK=1
+SEGMENTER_URL="http://192.248.10.70:8000/segment"
 
 # SuperPoint IP Camera Processing Demo Runner Script
 # Allows easy configuration and execution of SuperPoint IP camera demo
@@ -17,7 +17,7 @@ THREADS=${THREADS:-2}                        # Number of pre/post-processing thr
 MODEL=${MODEL:-"/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/compiled_SP_by_H.xmodel"}  # Model file name
 IP_ADDRESS=${IP_ADDRESS:-"192.168.8.111"}    # IP address of the camera stream
 PORT=${PORT:-"8080"}                         # Port of the camera stream 
-FPS=${FPS:-"20"}                             # Target FPS for frame capture
+FPS=${FPS:-"15"}                             # Target FPS for frame capture
 PROTOCOL=${PROTOCOL:-"rtsp"}                 # Protocol for video streaming (rtsp, http, etc.)
 CAMERA_FPS=${CAMERA_FPS:-"30"}               # Actual camera FPS (default: 30)
 

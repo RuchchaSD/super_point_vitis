@@ -5,7 +5,7 @@ mkdir -p received_masks
 
 # Run curl command and save raw response
 curl -X POST \
-  -F "image=@/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/People in park.jpg" \
+  -F "image=@/root/jupyter_notebooks/Fyp/sp_cmake/super_point_vitis/People in park_gray.jpg" \
   http://192.248.10.70:8000/segment \
   -o response.json \
   -w "\nTotal time: %{time_total} seconds\n"
