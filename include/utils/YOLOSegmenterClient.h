@@ -174,39 +174,59 @@ public:
                 auto parse_start = std::chrono::high_resolution_clock::now();
                 auto j = json::parse(response.text);
                 
-                // Extract masks from response
-                if (!j.contains("masks") || j["masks"].empty()) {
-                    DEBUG_PRINT("No masks in response or empty masks array");
-                    return combined_mask;
-                }
-                
-                auto masks_array = j["masks"].get<std::vector<std::string>>();
-                DEBUG_PRINT("Received " << masks_array.size() << " masks from server");
-                
-                // Process each mask and combine them
-                for (size_t i = 0; i < masks_array.size(); ++i) {
-                    DEBUG_PRINT("Processing mask " << (i+1) << "/" << masks_array.size());
+                // Check for merged_mask first (preferred approach)
+                if (j.contains("merged_mask") && !j["merged_mask"].empty()) {
+                    DEBUG_PRINT("Found merged_mask in response");
+                    std::string merged_mask_b64 = j["merged_mask"].get<std::string>();
                     
                     // Decode base64 to binary
-                    std::vector<uchar> mask_data = decodeBase64(masks_array[i]);
-                    if (mask_data.empty()) {
-                        DEBUG_PRINT("Empty decoded data for mask " << (i+1));
-                        continue;
+                    std::vector<uchar> mask_data = decodeBase64(merged_mask_b64);
+                    if (!mask_data.empty()) {
+                        // Decode mask from binary data
+                        cv::Mat mask = cv::imdecode(mask_data, cv::IMREAD_UNCHANGED);
+                        if (!mask.empty()) {
+                            // Resize mask to original image size
+                            cv::resize(mask, combined_mask, original_size, 0, 0, cv::INTER_NEAREST);
+                            DEBUG_PRINT("Successfully processed merged mask");
+                        } else {
+                            DEBUG_PRINT("Failed to decode merged mask");
+                        }
+                    } else {
+                        DEBUG_PRINT("Empty decoded data for merged mask");
                     }
+                }
+                // Fall back to processing individual masks if no merged mask or merged mask processing failed
+                else if (j.contains("masks") && !j["masks"].empty()) {
+                    auto masks_array = j["masks"].get<std::vector<std::string>>();
+                    DEBUG_PRINT("No merged mask found. Received " << masks_array.size() << " individual masks from server");
                     
-                    // Decode mask from binary data
-                    cv::Mat mask = cv::imdecode(mask_data, cv::IMREAD_UNCHANGED);
-                    if (mask.empty()) {
-                        DEBUG_PRINT("Failed to decode mask " << (i+1));
-                        continue;
+                    // Process each mask and combine them
+                    for (size_t i = 0; i < masks_array.size(); ++i) {
+                        DEBUG_PRINT("Processing mask " << (i+1) << "/" << masks_array.size());
+                        
+                        // Decode base64 to binary
+                        std::vector<uchar> mask_data = decodeBase64(masks_array[i]);
+                        if (mask_data.empty()) {
+                            DEBUG_PRINT("Empty decoded data for mask " << (i+1));
+                            continue;
+                        }
+                        
+                        // Decode mask from binary data
+                        cv::Mat mask = cv::imdecode(mask_data, cv::IMREAD_UNCHANGED);
+                        if (mask.empty()) {
+                            DEBUG_PRINT("Failed to decode mask " << (i+1));
+                            continue;
+                        }
+                        
+                        // Resize mask to original image size
+                        cv::Mat resized_mask;
+                        cv::resize(mask, resized_mask, original_size, 0, 0, cv::INTER_NEAREST);
+                        
+                        // Combine masks (logical OR)
+                        cv::bitwise_or(combined_mask, resized_mask, combined_mask);
                     }
-                    
-                    // Resize mask to original image size
-                    cv::Mat resized_mask;
-                    cv::resize(mask, resized_mask, original_size, 0, 0, cv::INTER_NEAREST);
-                    
-                    // Combine masks (logical OR)
-                    cv::bitwise_or(combined_mask, resized_mask, combined_mask);
+                } else {
+                    DEBUG_PRINT("No masks or merged_mask in response");
                 }
                 
                 auto parse_end = std::chrono::high_resolution_clock::now();

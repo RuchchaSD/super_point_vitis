@@ -47,7 +47,40 @@ struct DpuInferenceTask {
     std::vector<int8_t> input_data;
     float scale_w;
     float scale_h;
-    std::future<cv::Mat> mask_future;  // Future for asynchronous mask retrieval
+    std::unique_ptr<std::future<cv::Mat>> mask_future;  // Future for asynchronous mask retrieval
+    
+    // Add move constructor
+    DpuInferenceTask() = default;
+    
+    // Delete copy constructor and assignment operator
+    DpuInferenceTask(const DpuInferenceTask&) = delete;
+    DpuInferenceTask& operator=(const DpuInferenceTask&) = delete;
+    
+    // Add move constructor and assignment operator
+    DpuInferenceTask(DpuInferenceTask&& other) noexcept
+        : index(other.index),
+          timestamp(other.timestamp),
+          filename(std::move(other.filename)),
+          img(std::move(other.img)),
+          input_data(std::move(other.input_data)),
+          scale_w(other.scale_w),
+          scale_h(other.scale_h),
+          mask_future(std::move(other.mask_future))
+    {}
+    
+    DpuInferenceTask& operator=(DpuInferenceTask&& other) noexcept {
+        if (this != &other) {
+            index = other.index;
+            timestamp = other.timestamp;
+            filename = std::move(other.filename);
+            img = std::move(other.img);
+            input_data = std::move(other.input_data);
+            scale_w = other.scale_w;
+            scale_h = other.scale_h;
+            mask_future = std::move(other.mask_future);
+        }
+        return *this;
+    }
 };
 
 struct DpuInferenceResult {
@@ -61,7 +94,47 @@ struct DpuInferenceResult {
     float scale_h;
     float scale1;
     float scale2;
-    cv::Mat mask;  // Store the actual mask instead of future
+    // cv::Mat mask;  // Store the actual mask instead of future
+    std::unique_ptr<std::future<cv::Mat>> mask_future;  // Future for asynchronous mask retrieval
+    
+    // Add move constructor
+    DpuInferenceResult() = default;
+    
+    // Delete copy constructor and assignment operator
+    DpuInferenceResult(const DpuInferenceResult&) = delete;
+    DpuInferenceResult& operator=(const DpuInferenceResult&) = delete;
+    
+    // Add move constructor and assignment operator
+    DpuInferenceResult(DpuInferenceResult&& other) noexcept
+        : index(other.index),
+          timestamp(other.timestamp),
+          filename(std::move(other.filename)),
+          img(std::move(other.img)),
+          output_data1(std::move(other.output_data1)),
+          output_data2(std::move(other.output_data2)),
+          scale_w(other.scale_w),
+          scale_h(other.scale_h),
+          scale1(other.scale1),
+          scale2(other.scale2),
+          mask_future(std::move(other.mask_future))
+    {}
+    
+    DpuInferenceResult& operator=(DpuInferenceResult&& other) noexcept {
+        if (this != &other) {
+            index = other.index;
+            timestamp = other.timestamp;
+            filename = std::move(other.filename);
+            img = std::move(other.img);
+            output_data1 = std::move(other.output_data1);
+            output_data2 = std::move(other.output_data2);
+            scale_w = other.scale_w;
+            scale_h = other.scale_h;
+            scale1 = other.scale1;
+            scale2 = other.scale2;
+            mask_future = std::move(other.mask_future);
+        }
+        return *this;
+    }
 };
 
 // SuperPointResult is now deprecated, use ResultQueueItem instead

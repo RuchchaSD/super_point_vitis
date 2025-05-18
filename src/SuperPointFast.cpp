@@ -72,7 +72,7 @@ void SuperPointFast::pre_process(const std::vector<cv::Mat>& input_images,
     for (int i = start_idx; i < end_idx; ++i) {
         // Enqueue task
         task_queue.enqueue(
-            pre_process_image(input_images[i], i)
+            std::move(pre_process_image(input_images[i], i))
         );
     }
     __TOC__(PREPROCESS)
@@ -141,7 +141,7 @@ DpuInferenceTask SuperPointFast::pre_process_image(InputQueueItem inputItem)
     if (use_segmentation_mask_ && segmenter_) {
         LOG_IF(INFO, ENV_PARAM(DEBUG_SUPERPOINT)) 
             << "Requesting segmentation mask for image " << task.index;
-        task.mask_future = segmenter_->fetchMasksAsync(task.img);
+        task.mask_future = std::make_unique<std::future<cv::Mat>>(segmenter_->fetchMasksAsync(task.img));
     }
 
     auto img = inputItem.image;
@@ -228,14 +228,10 @@ void SuperPointFast::dpu_inference(ThreadSafeQueue<DpuInferenceTask>& task_queue
                 result.scale_h = task.scale_h;
 
                 // Get mask from future if available
-                if (use_segmentation_mask_ && task.mask_future.valid()) {
-                    try {
-                        result.mask = task.mask_future.get();
-                    } catch (const std::exception& e) {
-                        LOG_IF(ERROR, ENV_PARAM(DEBUG_SUPERPOINT)) 
-                            << "Failed to get segmentation mask: " << e.what();
-                    }
+                if (use_segmentation_mask_ && task.mask_future && task.mask_future->valid()) {
+                    result.mask_future = std::move(task.mask_future);
                 }
+
 
                 // Copy output tensors efficiently
                 __TIC__(MEMCOPY_OUTPUT)
@@ -257,7 +253,7 @@ void SuperPointFast::dpu_inference(ThreadSafeQueue<DpuInferenceTask>& task_queue
                 result.scale2 = vitis::ai::library::tensor_scale(output_tensors[1]);
 
                 // Enqueue result for post-processing
-                result_queue.enqueue(result);
+                result_queue.enqueue(std::move(result));
                 tasks_processed++;
                 __TOC__(DPU_INFERENCE_CYCLE)
             }
@@ -310,22 +306,6 @@ ResultQueueItem SuperPointFast::process_result(const DpuInferenceResult& result)
     sp_result.image = result.img;
     sp_result.filename = result.filename;
 
-    // Get segmentation mask if available
-    cv::Mat mask;
-    bool use_mask = false;
-    
-    if (use_segmentation_mask_ && !result.mask.empty()) {
-        mask = result.mask;
-        // Ensure mask has the same dimensions as the image
-        if (mask.rows != result.img.rows || mask.cols != result.img.cols) {
-            cv::resize(mask, mask, result.img.size(), 0, 0, cv::INTER_NEAREST);
-        }
-        use_mask = true;
-        LOG_IF(INFO, ENV_PARAM(DEBUG_SUPERPOINT)) 
-            << "Using mask for keypoint filtering with " 
-            << cv::countNonZero(mask) << " masked pixels";
-    }
-
     // Post-processing steps
     const int8_t* out1 = result.output_data1.data();
     const int8_t* out2 = result.output_data2.data();
@@ -371,7 +351,26 @@ ResultQueueItem SuperPointFast::process_result(const DpuInferenceResult& result)
         std::cout << "Confidence threshold: " << current_conf_thresh << std::endl;
     }
 
+    // Get segmentation mask if available
+    cv::Mat mask;
+    bool use_mask = false;
+
     // Prepare scaled mask for keypoint filtering if needed
+    if (use_segmentation_mask_ && result.mask_future && result.mask_future->valid()) {
+        try {
+            mask = result.mask_future->get();
+        } catch (const std::exception& e) {
+            LOG_IF(ERROR, ENV_PARAM(DEBUG_SUPERPOINT)) 
+                << "Failed to get segmentation mask: " << e.what();
+            mask = cv::Mat();
+        }
+
+        if (!mask.empty() && (mask.rows != result.img.rows || mask.cols != result.img.cols)) {
+            cv::resize(mask, mask, result.img.size(), 0, 0, cv::INTER_NEAREST);
+        }
+        use_mask = !mask.empty();
+    }
+
     cv::Mat scaled_mask;
     if (use_mask) {
         cv::resize(mask, scaled_mask, cv::Size(sWidth, sHeight), 0, 0, cv::INTER_NEAREST);
@@ -610,7 +609,7 @@ void SuperPointFast::run(ThreadSafeQueue<InputQueueItem>& input_queue, ThreadSaf
                     }
 
                     task_queue->enqueue(
-                        pre_process_image(item)
+                        std::move(pre_process_image(item))
                     );                            
                 }
             }
